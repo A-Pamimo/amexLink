@@ -1,0 +1,33 @@
+{
+  "name": "amexlens",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@radix-ui/react-select": "^2.0.0",
+    "better-sqlite3": "^9.0.0",
+    "date-fns": "^3.0.0",
+    "next": "^14.0.0",
+    "plaid": "^26.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-plaid-link": "^3.5.0",
+    "recharts": "^2.10.0",
+    "sonner": "^1.0.0",
+    "swr": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.0.0"
+  }
+}

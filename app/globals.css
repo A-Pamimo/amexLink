@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-background text-white;
+}
+
+.neo-card {
+  @apply rounded-xl bg-card border border-white/5 shadow-lg shadow-cyan-500/10;
+}
+
+.neo-badge {
+  @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium bg-white/5 border border-white/10;
+}
