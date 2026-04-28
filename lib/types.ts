@@ -9,13 +9,70 @@ export type BucketKey =
   | "health"
   | "entertainment"
   | "education"
+  | "income"
+  | "transfers"
   | "other";
 
+export const ALL_BUCKETS: BucketKey[] = [
+  "food",
+  "groceries",
+  "travel",
+  "transport",
+  "utilities",
+  "subscriptions",
+  "shopping",
+  "health",
+  "entertainment",
+  "education",
+  "income",
+  "transfers",
+  "other",
+];
+
+export const NON_SPENDING_BUCKETS: BucketKey[] = ["income", "transfers"];
+
+export const SPENDING_BUCKETS: BucketKey[] = ALL_BUCKETS.filter(
+  (b) => !NON_SPENDING_BUCKETS.includes(b)
+);
+
+export const BUCKET_LABELS: Record<BucketKey, string> = {
+  food: "Food & Drink",
+  groceries: "Groceries",
+  travel: "Travel",
+  transport: "Transport",
+  utilities: "Utilities",
+  subscriptions: "Subscriptions",
+  shopping: "Shopping",
+  health: "Health",
+  entertainment: "Entertainment",
+  education: "Education",
+  income: "Income",
+  transfers: "Transfers & Payments",
+  other: "Other",
+};
+
+export const BUCKET_COLORS: Record<BucketKey, string> = {
+  food: "#f97316",
+  groceries: "#22c55e",
+  travel: "#38bdf8",
+  transport: "#a78bfa",
+  utilities: "#facc15",
+  subscriptions: "#ec4899",
+  shopping: "#f43f5e",
+  health: "#14b8a6",
+  entertainment: "#fb7185",
+  education: "#60a5fa",
+  income: "#4ade80",
+  transfers: "#94a3b8",
+  other: "#64748b",
+};
+
 export interface PlaidItem {
-  id: number;
+  id: string;
   access_token: string;
   item_id: string;
   institution_name: string | null;
+  institution_id: string | null;
   created_at: string;
   last_synced_at: string | null;
   cursor: string | null;
@@ -27,6 +84,7 @@ export interface Transaction {
   item_id: string;
   name: string;
   amount: number;
+  iso_currency_code: string | null;
   date: string;
   plaid_category: string | null;
   plaid_category_detailed: string | null;
@@ -38,13 +96,27 @@ export interface Transaction {
   created_at: string;
 }
 
-export interface BucketTotals {
-  [key: string]: number;
-}
+export type BucketTotals = Partial<Record<BucketKey, number>>;
 
 export interface MonthlyTrendPoint {
-  month: string; // YYYY-MM
+  month: string;
   total: number;
   byBucket: BucketTotals;
 }
 
+export interface SyncResult {
+  added: number;
+  modified: number;
+  removed: number;
+}
+
+export interface TransactionFilters {
+  from?: string;
+  to?: string;
+  bucket?: BucketKey;
+  item_id?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+  include_non_spending?: boolean;
+}

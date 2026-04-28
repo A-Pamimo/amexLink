@@ -61,6 +61,39 @@ const PLAID_TO_BUCKET: Record<string, BucketKey> = {
   GENERAL_SERVICES_EDUCATION: "education",
   EDUCATION_TUITION: "education",
   EDUCATION_BOOKS_AND_SUPPLIES: "education",
+
+  // Income
+  INCOME_WAGES: "income",
+  INCOME_DIVIDENDS: "income",
+  INCOME_INTEREST_EARNED: "income",
+  INCOME_RETIREMENT_PENSION: "income",
+  INCOME_TAX_REFUND: "income",
+  INCOME_UNEMPLOYMENT: "income",
+  INCOME_OTHER_INCOME: "income",
+
+  // Transfers & card payments
+  TRANSFER_IN_ACCOUNT_TRANSFER: "transfers",
+  TRANSFER_IN_DEPOSIT: "transfers",
+  TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS: "transfers",
+  TRANSFER_IN_SAVINGS: "transfers",
+  TRANSFER_IN_OTHER_TRANSFER_IN: "transfers",
+  TRANSFER_OUT_ACCOUNT_TRANSFER: "transfers",
+  TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS: "transfers",
+  TRANSFER_OUT_SAVINGS: "transfers",
+  TRANSFER_OUT_WITHDRAWAL: "transfers",
+  TRANSFER_OUT_OTHER_TRANSFER_OUT: "transfers",
+  LOAN_PAYMENTS_CREDIT_CARD_PAYMENT: "transfers",
+  LOAN_PAYMENTS_CAR_PAYMENT: "transfers",
+  LOAN_PAYMENTS_MORTGAGE_PAYMENT: "transfers",
+  LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT: "transfers",
+  LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT: "transfers",
+  LOAN_PAYMENTS_OTHER_PAYMENT: "transfers",
+  BANK_FEES_ATM_FEES: "transfers",
+  BANK_FEES_FOREIGN_TRANSACTION_FEES: "transfers",
+  BANK_FEES_INSUFFICIENT_FUNDS: "transfers",
+  BANK_FEES_INTEREST_CHARGE: "transfers",
+  BANK_FEES_OVERDRAFT_FEES: "transfers",
+  BANK_FEES_OTHER_BANK_FEES: "transfers",
 };
 
 const MERCHANT_KEYWORDS: Array<{ pattern: RegExp; bucket: BucketKey }> = [
@@ -96,6 +129,12 @@ const MERCHANT_KEYWORDS: Array<{ pattern: RegExp; bucket: BucketKey }> = [
       /tim hortons|starbucks|mcdonald|subway|chipotle|burger king|a&w/i,
     bucket: "food",
   },
+  { pattern: /payroll|direct deposit|paycheque|paycheck/i, bucket: "income" },
+  {
+    pattern:
+      /amex payment|amex epayment|credit card payment|autopay|interac e-transfer/i,
+    bucket: "transfers",
+  },
 ];
 
 export function categorizeTx(
@@ -113,6 +152,10 @@ export function categorizeTx(
 
   if (plaidDetailedCategory) {
     const lower = plaidDetailedCategory.toLowerCase();
+    if (lower.startsWith("income_")) return "income";
+    if (lower.startsWith("transfer_") || lower.startsWith("loan_payments_") || lower.startsWith("bank_fees_")) {
+      return "transfers";
+    }
     if (lower.includes("food") || lower.includes("restaurant")) return "food";
     if (lower.includes("grocer")) return "groceries";
     if (
@@ -146,4 +189,3 @@ export function categorizeTx(
 
   return "other";
 }
-

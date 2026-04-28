@@ -1,0 +1,145 @@
+"use client";
+import useSWR, { useSWRConfig } from "swr";
+import { useState } from "react";
+import { toast } from "sonner";
+import { PlaidLinkButton } from "@/components/PlaidLinkButton";
+import { SyncButton } from "@/components/SyncButton";
+import type { PlaidItem } from "@/lib/types";
+
+interface HealthResponse {
+  db_ok: boolean;
+  storage: string;
+  auth_mode: string;
+  plaid_env: string;
+  country_codes: string[];
+  items_count: number;
+  tx_count: number;
+}
+
+export default function SettingsPage() {
+  const { data: itemsData } = useSWR<{ items: Omit<PlaidItem, "access_token">[] }>(
+    "/api/items"
+  );
+  const { data: health } = useSWR<HealthResponse>("/api/health");
+  const { mutate } = useSWRConfig();
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  async function disconnect(id: string, name: string | null) {
+    if (!confirm(`Disconnect ${name ?? "this card"}? Its transactions will be removed.`)) {
+      return;
+    }
+    setRemovingId(id);
+    try {
+      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success(`Disconnected ${name ?? "card"}`);
+      mutate("/api/items");
+      mutate((k) => typeof k === "string" && k.startsWith("/api/stats/"));
+      mutate((k) => typeof k === "string" && k.startsWith("/api/transactions"));
+      mutate("/api/health");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not disconnect");
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  const items = itemsData?.items ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Settings</h1>
+        <div className="flex items-center gap-2">
+          <SyncButton />
+          <PlaidLinkButton />
+        </div>
+      </div>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium text-slate-300">Connected cards</h2>
+        {items.length === 0 ? (
+          <div className="neo-card p-6 text-sm text-slate-400">
+            No cards connected. Click <em>Connect a card</em> to start.
+          </div>
+        ) : (
+          <div className="neo-card divide-y divide-white/5">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-3 px-4 py-3"
+              >
+                <div>
+                  <div className="font-medium text-slate-100">
+                    {item.institution_name ?? "Unknown institution"}
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    Linked {new Date(item.created_at).toLocaleDateString()} ·{" "}
+                    {item.last_synced_at
+                      ? `synced ${new Date(item.last_synced_at).toLocaleString()}`
+                      : "never synced"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <SyncButton itemId={item.item_id} />
+                  <button
+                    onClick={() => disconnect(item.id, item.institution_name)}
+                    disabled={removingId === item.id}
+                    className="rounded-md border border-rose-400/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                  >
+                    {removingId === item.id ? "Removing…" : "Disconnect"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium text-slate-300">System</h2>
+        <div className="neo-card p-4 text-sm">
+          <dl className="grid grid-cols-2 gap-y-2 sm:grid-cols-4">
+            <Stat label="Storage" value={health?.storage ?? "—"} />
+            <Stat label="Plaid env" value={health?.plaid_env ?? "—"} />
+            <Stat label="Auth mode" value={health?.auth_mode ?? "—"} />
+            <Stat
+              label="DB"
+              value={health?.db_ok ? "ok" : "error"}
+              tone={health?.db_ok ? "good" : "bad"}
+            />
+            <Stat label="Cards" value={String(health?.items_count ?? 0)} />
+            <Stat label="Transactions" value={String(health?.tx_count ?? 0)} />
+            <Stat
+              label="Countries"
+              value={health?.country_codes?.join(", ") ?? "—"}
+            />
+          </dl>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "good" | "bad";
+}) {
+  const toneClass =
+    tone === "good"
+      ? "text-emerald-400"
+      : tone === "bad"
+        ? "text-rose-400"
+        : "text-slate-100";
+  return (
+    <div>
+      <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`text-sm ${toneClass}`}>{value}</dd>
+    </div>
+  );
+}
