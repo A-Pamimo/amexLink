@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertSameOrigin } from "@/lib/csrf";
 import { getDB } from "@/lib/db";
 import { getPlaid } from "@/lib/plaid";
 
@@ -6,9 +7,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: { id: string } }
 ) {
+  const csrf = assertSameOrigin(req);
+  if (!csrf.ok) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const db = await getDB();
   const items = await db.listItems();
   const target = items.find((i) => i.id === params.id);

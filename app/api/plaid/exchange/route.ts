@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertSameOrigin } from "@/lib/csrf";
 import { getDB } from "@/lib/db";
 import { newId } from "@/lib/id";
 import { getPlaid } from "@/lib/plaid";
@@ -8,6 +9,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const csrf = assertSameOrigin(req);
+  if (!csrf.ok) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   let body: any;
   try {
     body = await req.json();

@@ -1,0 +1,67 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amexlens:latest
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: production
+      DB_PATH: /data/amexlens.sqlite
+    volumes:
+      # Bind-mount onto a host path that lives on an encrypted FS. On Linux
+      # set up via cryptsetup/LUKS; on AWS use an encrypted EBS volume; on
+      # GCP use a CMEK-encrypted PD; on fly.io use an encrypted-at-rest volume.
+      - ./data/amexlens:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    cap_drop: ["ALL"]
+    security_opt:
+      - "no-new-privileges:true"
+    pids_limit: 256
+    mem_limit: 512m
+    networks:
+      - internal
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - internal
+      - public
+    depends_on:
+      app:
+        condition: service_healthy
+
+networks:
+  internal:
+    internal: true
+  public: {}
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { assertSameOrigin } from "@/lib/csrf";
 import { getPlaid, plaidCountryCodes, TRANSACTIONS_PRODUCT } from "@/lib/plaid";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const csrf = assertSameOrigin(req);
+  if (!csrf.ok) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const plaid = getPlaid();
   try {
     const res = await plaid.linkTokenCreate({

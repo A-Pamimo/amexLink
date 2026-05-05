@@ -1,0 +1,10 @@
+# RFC 9116 - https://www.rfc-editor.org/rfc/rfc9116
+# Replace the placeholders below before deploying. Re-sign with PGP for HTTPS-served deployments.
+
+Contact: mailto:security@example.com
+Expires: 2027-01-01T00:00:00.000Z
+Encryption: https://example.com/.well-known/security.asc
+Acknowledgments: https://example.com/security/acknowledgements
+Preferred-Languages: en
+Canonical: https://example.com/.well-known/security.txt
+Policy: https://github.com/A-Pamimo/amexlink/blob/main/SECURITY.md

@@ -3,6 +3,8 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { categorizeTx } from "../categorize";
+import { decryptSecret, encryptSecret, isEncrypted } from "../crypto";
+import { env } from "../env";
 import type {
   DB,
   PlaidItemInsert,
@@ -53,9 +55,19 @@ function migrate(db: Database.Database) {
 }
 
 function rowToItem(row: any): PlaidItem {
+  let token: string;
+  try {
+    token = decryptSecret(row.access_token, env.APP_SECRET);
+  } catch {
+    // Decryption failure (e.g. APP_SECRET rotated). Surface clearly so
+    // operators don't get an opaque sync error later.
+    throw new Error(
+      `failed to decrypt access_token for item ${row.item_id}; APP_SECRET may have been rotated`
+    );
+  }
   return {
     id: row.id,
-    access_token: row.access_token,
+    access_token: token,
     item_id: row.item_id,
     institution_name: row.institution_name ?? null,
     institution_id: row.institution_id ?? null,
@@ -268,17 +280,40 @@ export function createSqliteDB(dbPath: string): DB {
     return { sql, params };
   }
 
+  const reencryptStmt = db.prepare(
+    `UPDATE plaid_items SET access_token = ? WHERE item_id = ?`
+  );
+
+  function maybeReencrypt(rows: any[]) {
+    for (const row of rows) {
+      if (!isEncrypted(row.access_token)) {
+        reencryptStmt.run(
+          encryptSecret(row.access_token, env.APP_SECRET),
+          row.item_id
+        );
+      }
+    }
+  }
+
   return {
     async listItems() {
-      return listItemsStmt.all().map(rowToItem);
+      const rows = listItemsStmt.all() as any[];
+      maybeReencrypt(rows);
+      return rows.map(rowToItem);
     },
     async getItemByItemId(item_id) {
-      const r = getItemByItemIdStmt.get(item_id);
-      return r ? rowToItem(r) : null;
+      const r = getItemByItemIdStmt.get(item_id) as any;
+      if (!r) return null;
+      maybeReencrypt([r]);
+      return rowToItem(r);
     },
     async insertItem(item: PlaidItemInsert) {
       const created_at = new Date().toISOString();
-      insertItemStmt.run({ ...item, created_at });
+      insertItemStmt.run({
+        ...item,
+        access_token: encryptSecret(item.access_token, env.APP_SECRET),
+        created_at,
+      });
       return {
         ...item,
         created_at,

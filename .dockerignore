@@ -1,0 +1,15 @@
+.git
+.github
+.next
+node_modules
+data
+data/**
+.env
+.env.*
+!.env.example
+*.log
+docs/security/pentesting
+scripts/provision_gray_box_accounts.sh
+scripts/teardown_gray_box.sh
+README.md
+SECURITY.md

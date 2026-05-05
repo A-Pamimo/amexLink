@@ -1,0 +1,56 @@
+# Caddy reverse proxy for AmexLens. Caddy gets free Let's Encrypt and modern
+# TLS defaults; the Next app trusts it for the X-Forwarded-* headers.
+#
+# Replace example.com with your real hostname before deploying.
+
+{
+    email security@example.com
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+example.com {
+    encode zstd gzip
+
+    # Security headers are also set by Next; Caddy re-applies them so they
+    # also cover responses that bypass the app (errors, redirects).
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Resource-Policy "same-site"
+        -Server
+        -X-Powered-By
+    }
+
+    # Reject obvious junk before it reaches Node.
+    @bad_method {
+        method !GET HEAD POST PATCH DELETE OPTIONS
+    }
+    respond @bad_method 405
+
+    # Optional crude rate-limit using Caddy's built-in. For real protection,
+    # put Cloudflare / Cloud Armor / fly proxy in front of this.
+    # Uncomment after installing the caddy-ratelimit module.
+    # rate_limit {
+    #   zone login_ip {
+    #     key  {client_ip}
+    #     events 5
+    #     window 10m
+    #     match {
+    #       method POST
+    #       path /api/auth/login
+    #     }
+    #   }
+    # }
+
+    reverse_proxy app:3000 {
+        header_up X-Real-IP {client_ip}
+        header_up X-Forwarded-For {client_ip}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

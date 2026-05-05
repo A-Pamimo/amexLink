@@ -54,6 +54,13 @@ if (AUTH_MODE === "password" && !process.env.AUTH_PASSWORD) {
   throw new Error("AUTH_MODE=password requires AUTH_PASSWORD to be set");
 }
 
+const APP_SECRET = requireEnv("APP_SECRET");
+if (APP_SECRET.length < 32) {
+  throw new Error(
+    "APP_SECRET must be at least 32 chars. Generate one with: openssl rand -base64 48"
+  );
+}
+
 export const env = Object.freeze({
   PLAID_CLIENT_ID: requireEnv("PLAID_CLIENT_ID"),
   PLAID_SECRET: requireEnv("PLAID_SECRET"),
@@ -67,6 +74,9 @@ export const env = Object.freeze({
   DATABASE_URL: process.env.DATABASE_URL ?? null,
   AUTH_MODE,
   AUTH_PASSWORD: process.env.AUTH_PASSWORD ?? null,
+  APP_SECRET,
+  COOKIE_SECURE: (process.env.COOKIE_SECURE ?? "auto") as "auto" | "true" | "false",
+  CSRF_ALLOWED_ORIGINS: process.env.CSRF_ALLOWED_ORIGINS ?? null,
 });
 
 export type Env = typeof env;
