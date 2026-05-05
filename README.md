@@ -1,0 +1,157 @@
+# AmexLens
+
+A self-hosted personal-finance dashboard for Plaid-linked cards (Amex or otherwise). Connect a card, sync transactions, see them auto-categorized into spending buckets, override categories where the auto-rules miss, and watch a monthly stacked trend.
+
+Next.js 14 App Router + Tailwind + SQLite (or libsql / Postgres) + Plaid + Recharts + SWR.
+
+## Quick start
+
+```bash
+git clone <repo>
+cd amexLink
+cp .env.example .env.local        # fill in PLAID_CLIENT_ID / PLAID_SECRET
+npm install
+npm run dev                       # http://localhost:3000
+```
+
+Open `/settings` → **Connect a card** → in Plaid sandbox use:
+
+- username: `user_good`
+- password: `pass_good`
+- MFA (if prompted): `1234`
+
+Sandbox seeds ~50–200 transactions; the dashboard, donut, and trend chart populate immediately.
+
+## Environment variables
+
+All live in `.env.local` (gitignored). `.env.example` documents the full surface.
+
+| var | required | values | notes |
+|---|---|---|---|
+| `PLAID_CLIENT_ID` | yes | string | from the Plaid dashboard |
+| `PLAID_SECRET` | yes | string | scoped per env (sandbox/development/production) |
+| `PLAID_ENV` | no | `sandbox` \| `development` \| `production` | default `sandbox` |
+| `PLAID_COUNTRY_CODES` | no | comma list | default `US,CA` |
+| `STORAGE` | no | `sqlite` \| `libsql` \| `postgres` | default `sqlite` |
+| `DB_PATH` | no | path | sqlite only; default `data/amexlens.sqlite` |
+| `DATABASE_URL` | conditional | URL | required for `libsql` / `postgres` |
+| `AUTH_MODE` | no | `none` \| `password` \| `passkey` | default `none` |
+| `AUTH_PASSWORD` | conditional | string | required when `AUTH_MODE=password` |
+
+Validation runs at server startup (`lib/env.ts`). Missing or invalid values throw a clear error before anything tries to talk to Plaid or the DB.
+
+## Storage modes
+
+You can pick the storage backend per deploy:
+
+- **`sqlite`** (default) — `better-sqlite3` against a local file. Fast, zero ops, perfect for localhost / homelab / a small VPS. Native module, so it does **not** run on Vercel serverless.
+- **`libsql`** — Turso / libsql remote. Vercel-compatible. Driver slot exists in `lib/db.ts`; add `@libsql/client` and implement `lib/db/libsql.ts` against the same `DB` interface as `lib/db/sqlite.ts`.
+- **`postgres`** — same story, slot is wired but the driver isn't installed by default.
+
+The `DB` interface in `lib/db.ts` is the single source of truth — every API route and helper goes through it, so swapping drivers is mechanical.
+
+## Auth modes
+
+- **`none`** (default) — open. Fine for `localhost`.
+- **`password`** — single shared password set via `AUTH_PASSWORD`. `middleware.ts` redirects to `/login` and sets a `httpOnly` cookie on success. Use this when reaching the app over Tailscale / LAN.
+- **`passkey`** — slot reserved; not implemented yet. Add `@simplewebauthn/server` and wire up `/api/auth/*` to ship.
+
+`/api/health` is always reachable so external monitors don't need credentials.
+
+## Plaid sync flow
+
+1. `POST /api/plaid/link-token` → server creates a Link token (products: `transactions`, country codes from env).
+2. Client opens Plaid Link via `usePlaidLink`. On success, posts the `public_token` + institution metadata to `POST /api/plaid/exchange`.
+3. Server exchanges for an `access_token`, stores the item, and triggers an initial sync.
+4. `POST /api/plaid/sync[?item_id=...]` runs `/transactions/sync` in a `has_more` loop:
+   - **added** → `INSERT OR IGNORE`, auto-categorized via `lib/categorize.ts`.
+   - **modified** → `UPDATE`, but `bucket` is overwritten **only if `bucket_override = 0`** (your manual overrides survive re-syncs).
+   - **removed** → hard `DELETE`.
+   - `cursor` + `last_synced_at` are persisted only on a fully successful loop.
+
+Manual sync lives on `/settings` (per-card and "Sync all"). For cron, hit it via:
+
+```bash
+npm run sync                                # uses BASE_URL=http://localhost:3000
+BASE_URL=https://your-host npm run sync
+```
+
+## Categories ("buckets")
+
+`lib/categorize.ts` runs three tiers, in order:
+
+1. Exact match against Plaid's detailed `personal_finance_category` (e.g. `FOOD_AND_DRINK_RESTAURANTS` → `food`).
+2. Merchant-name regex (e.g. `netflix|spotify|hulu` → `subscriptions`, with a Canadian-leaning grocery / telco list).
+3. Lowercased substring sniff on the detailed category, falling back to `other`.
+
+Buckets are: `food`, `groceries`, `travel`, `transport`, `utilities`, `subscriptions`, `shopping`, `health`, `entertainment`, `education`, `income`, `transfers`, `other`. `income` and `transfers` are hidden from the donut + trend chart by default; the **Include income & transfers** toggle on the dashboard / transactions page reveals them.
+
+To override a category, click the bucket chip in the transactions table and pick a new one. That sets `bucket_override = 1`. Click **reset** on a row to clear the override and re-run the categorizer.
+
+## Project layout
+
+```
+app/
+  page.tsx                         dashboard
+  transactions/page.tsx            filterable table + override
+  settings/page.tsx                items, sync, system status
+  login/page.tsx                   used when AUTH_MODE=password
+  api/
+    plaid/{link-token,exchange,sync}/route.ts
+    items/[id]/route.ts            disconnect a card
+    items/route.ts                 list cards
+    transactions/{[id],}/route.ts  list / patch / reset bucket
+    stats/{totals,trend}/route.ts  aggregations
+    auth/{login,logout}/route.ts   password mode endpoints
+    health/route.ts                always-public status
+components/                        SWR-driven client UI
+lib/
+  types.ts                         BucketKey, Transaction, etc.
+  categorize.ts                    Plaid -> bucket rules
+  env.ts                           validated env loader
+  db.ts                            DB interface + driver dispatch
+  db/sqlite.ts                     better-sqlite3 implementation
+  db/migrations/0001_init.sql      schema
+  plaid.ts                         PlaidApi factory
+  transactions.ts                  /transactions/sync loop
+  date.ts, format.ts, id.ts        small helpers
+middleware.ts                      auth gate
+scripts/sync.mjs                   cron-friendly sync trigger
+scripts/backup.mjs                 copies sqlite to data/backups/
+```
+
+## Scripts
+
+| command | what it does |
+|---|---|
+| `npm run dev` | Next dev server on `:3000` |
+| `npm run build` / `npm start` | production build + start |
+| `npm run lint` | next lint |
+| `npm run sync` | hits `/api/plaid/sync` on the running server (auths if `AUTH_PASSWORD` is set) |
+| `npm run backup` | copies the sqlite file to `data/backups/amexlens-<timestamp>.sqlite` |
+
+## Verification
+
+A full local smoke test:
+
+1. `cp .env.example .env.local`, fill sandbox creds, leave `STORAGE=sqlite` and `AUTH_MODE=none`.
+2. `npm install && npm run dev`.
+3. `/settings` → Connect → sandbox login (`user_good` / `pass_good`).
+4. `sqlite3 data/amexlens.sqlite '.tables'` shows `_migrations`, `plaid_items`, `transactions`. `SELECT COUNT(*) FROM transactions;` is non-zero.
+5. `/` shows the donut + 6-month trend; `/transactions` populates.
+6. Override a row's bucket → refresh → override sticks. Click **Sync all** on `/settings` → override still sticks (validates the `bucket_override` guard).
+7. Click **reset** on the overridden row → it returns to the categorizer's choice.
+8. Link a second sandbox item → the **All cards** filter chip appears in the nav; selecting one scopes the dashboard.
+9. `curl http://localhost:3000/api/stats/totals?from=2026-04-01&to=2026-04-30` returns `{ from, to, byBucket, grandTotal }`.
+10. Switch `AUTH_MODE=password` + set `AUTH_PASSWORD`, restart, confirm `/login` is enforced and `/api/health` is still open.
+
+## Known limitations
+
+- A pending → posted transition (Plaid emits `removed(pending_id)` + `added(posted_id)`) drops any manual override on the pending row. v2 could rehydrate by hashing `(date, amount, merchant_name)`.
+- libsql + postgres drivers are stubbed; the interface is ready, the driver files are not.
+- Passkey auth is reserved but not implemented.
+- No multi-currency rollup with FX yet — each transaction stores its own `iso_currency_code` so totals can mix currencies if you link both USD and CAD cards. The dashboard formats per-row and doesn't try to convert.
+
+## License
+
+Personal project, no license file. Treat as all rights reserved unless you add one.
