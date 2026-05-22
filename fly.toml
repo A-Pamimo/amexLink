@@ -1,0 +1,49 @@
+# Fly.io config for AmexLens.
+# Rename this app before first deploy: `flyctl launch` will prompt, or edit `app` below.
+# Single-machine, single-region: sqlite needs to pin to one volume.
+
+app = "amexlens"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  STORAGE = "sqlite"
+  DB_PATH = "/data/amexlens.sqlite"
+  PLAID_ENV = "sandbox"
+  PLAID_COUNTRY_CODES = "US,CA"
+  AUTH_MODE = "password"
+  # Fly's edge always terminates TLS, so the cookie is always Secure.
+  COOKIE_SECURE = "true"
+
+# Persistent volume for sqlite. Create with:
+#   flyctl volumes create amexlens_data --region iad --size 1
+[[mounts]]
+  source = "amexlens_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Sqlite is single-writer; never let fly spin up a second machine on this volume.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/api/health"
+
+# 512MB is plenty for this app. Bump if Plaid syncs OOM on large transaction sets.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
