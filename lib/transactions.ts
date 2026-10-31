@@ -1,5 +1,6 @@
 import "server-only";
 import type { Transaction as PlaidTx } from "plaid";
+import { refreshItemCards } from "./cards/refresh";
 import { categorizeTx } from "./categorize";
 import { getDB, type TransactionInsert } from "./db";
 import { extractProviderError, mapProviderCode } from "./http/errors";
@@ -156,6 +157,18 @@ async function syncLocked(item_id: string): Promise<SyncResult> {
   if (item.status === "needs_relink" || item.status === "consent_required") {
     await db.setItemStatus(item_id, "active", null);
   }
+  // WP6a: card balances and liabilities. Transactions are already committed and the cursor has
+  // advanced, so nothing here may fail the sync. Cached balances only (`/accounts/get`); the
+  // billed live call is reserved for the explicit per-card refresh route.
+  try {
+    await refreshItemCards(item_id, { realtimeBalance: false });
+  } catch (err) {
+    logEvent("cards_refresh_failed", {
+      item_id,
+      error_code: extractProviderError(err).error_code,
+    });
+  }
+
   logEvent("sync_finished", { item_id, ...totals });
   return totals;
 }

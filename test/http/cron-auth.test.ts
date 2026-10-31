@@ -79,6 +79,8 @@ describe("POST /api/plaid/sync auth", () => {
     expect(JSON.parse(text)).toEqual({
       items: [{ item_id: "plaid-item-1", ok: true, added: 3, modified: 0, removed: 0 }],
       totals: { added: 3, modified: 0, removed: 0 },
+      // WP6a: urgency counts only (values depend on the clock); no amounts, no card data.
+      cards: { overdue: expect.any(Number), due_soon: expect.any(Number) },
     });
     expect(text).not.toContain("access-sandbox");
     expect(text).not.toContain("cursor");
