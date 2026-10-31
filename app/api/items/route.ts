@@ -7,7 +7,14 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const db = await getDB();
   const items = await db.listItems();
-  // Don't leak access_tokens to the client.
-  const safe = items.map(({ access_token, ...rest }) => rest);
+  // Explicit allowlist: new fields must be added here on purpose.
+  const safe = items.map((i) => ({
+    id: i.id,
+    item_id: i.item_id,
+    institution_name: i.institution_name,
+    institution_id: i.institution_id,
+    created_at: i.created_at,
+    last_synced_at: i.last_synced_at,
+  }));
   return NextResponse.json({ items: safe });
 }
