@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCardsResponse } from "@/lib/cards/view";
 import { getDB } from "@/lib/db";
 import { apiError, statusForCode } from "@/lib/http/errors";
 import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
@@ -13,6 +14,15 @@ export const dynamic = "force-dynamic";
 // a manual click cannot starve it (and vice versa).
 const MANUAL_LIMIT = 6;
 const CRON_LIMIT = 12;
+
+/** Urgency counts only (no amounts); omitted if the cards view cannot be built. */
+async function cardCounts(): Promise<{ overdue: number; due_soon: number } | undefined> {
+  try {
+    return (await getCardsResponse()).counts;
+  } catch {
+    return undefined;
+  }
+}
 
 export async function POST(req: Request) {
   const authz = await authorizeSync(req);
@@ -36,6 +46,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         items: [{ item_id: item.item_id, ok: true, ...r }],
         totals: r,
+        cards: await cardCounts(),
       });
     } catch (err) {
       const code = err instanceof SyncError ? err.code : "sync_failed";
@@ -50,5 +61,6 @@ export async function POST(req: Request) {
   }
 
   // Counts and codes only; a failing item is reported in `items`, not thrown.
-  return NextResponse.json(await syncAllItems());
+  const all = await syncAllItems();
+  return NextResponse.json({ ...all, cards: await cardCounts() });
 }
