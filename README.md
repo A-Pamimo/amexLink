@@ -170,6 +170,41 @@ npm run sync                                # loads .env.local; BASE_URL=http://
 
 Disconnect revokes at Plaid first and deletes locally only after Plaid accepts (or says the item is already gone).
 
+## Cards overview
+
+`/` is the cards overview (`/spending` is the previous spending dashboard; `/transactions` and `/settings` are unchanged in purpose). It reads `GET /api/cards` and shows, top to bottom:
+
+- **Urgency banner**: counts only ("2 cards overdue · 1 due within 7 days"), red if any card is overdue, amber if any is due within 7 days, otherwise "Nothing due in the next 7 days". It also shows today's America/Toronto date and when the response was generated.
+- **Totals, one group per currency** (total balance, due this cycle = sum of statement balances, overall utilization). CAD and USD are never added together and there is no combined figure. Utilization is `sum(balance) / sum(limit)` over cards that have both, and its caption says how many cards were used and how many were excluded.
+- **One tile per card**, already sorted by the API: institution, name, last four digits, currency, an urgency chip, then current balance, statement balance, minimum payment, next due date (with "in N days"), available credit, credit limit, utilization (labelled "computed": the app derives it, no issuer supplies it), last payment (amount and date), every APR the issuer reported (the penalty APR is labelled "Penalty") and the overdue flag. The footer shows `last_synced_at`, `last_refreshed_at` and whether the balance is "cached" or "live", in Toronto time.
+
+**Urgency rules** (America/Toronto civil dates, see `lib/cards/urgency.ts`): *overdue* when the issuer flags it, or the due date has passed and the issuer did not say "not overdue" (red); *due soon* from today through today + 7 days (amber, "Due today" / "Due in N days"); *scheduled* later than that (neutral); *past due date, issuer reports not overdue* (grey, common with stale sandbox dates); *due date unavailable* (grey).
+
+**Gap text.** A field Plaid did not give us is shown as missing, with the reason, never as zero or blank. The words come from the per-field status stored with each observation, and the tooltip adds the provider and `observed_at`:
+
+| status | text shown |
+|---|---|
+| `not_supplied` | Not supplied by Plaid |
+| `not_supported` | Plaid does not support this field at this institution |
+| `consent_required` | Reconnect Plaid to grant liabilities access |
+| `error` | Unavailable (Plaid error `<error_code>`) |
+
+A card whose Plaid connection needs attention also shows a badge pointing at Settings: *Reconnect needed*, *Grant liabilities access* or *Disconnect incomplete*.
+
+**Refresh balance (billed Plaid call)** on a tile calls `POST /api/cards/{id}/refresh`, the only path that asks Plaid for a live balance. It is billed per call by Plaid and limited to one per card per 10 minutes. Syncs and cron use the free cached balance.
+
+**Nothing on this screen is editable, by design.** There is no input, override or manual entry for any card field: values come from the aggregation API or are shown as missing.
+
+## Delete all local data
+
+Settings has a *Privacy and data* panel (what is pulled, that Plaid Inc. processes it in the United States, what is stored locally, and that tokens are encrypted at rest while the host disk must be encrypted) and a *Danger zone*. Typing `DELETE` enables **Delete all local data**, which calls `DELETE /api/data` (session + CSRF headers required, like every mutation):
+
+1. Every item is revoked at Plaid first, one after another, with the same revoke-then-delete path as disconnecting a single card.
+2. If any revoke fails the response is `502 { error: { code: "revoke_incomplete" }, results: [{ item_id, ok, code? }] }` and nothing else is deleted. Items that did revoke are already gone, as with a normal disconnect; the failed ones stay (`revoke_failed`) so you can fix the cause and run it again.
+3. If all revokes succeed (or there were no items), one transaction deletes `transactions`, `account_fields`, `accounts`, `plaid_items` and every `settings` key except `webauthn_user_id` and `plaid_client_user_id`, then the database is `VACUUM`ed and the session cookie is rotated.
+
+The `security_log` table is **kept** and gets a `data_delete_all` row (counts only). Plaid retains data under its own policy; this app does not claim Plaid deleted its copy. Sign-in factors (TOTP, passkeys, recovery codes) are not touched, and backups already written under `data/backups/` are not deleted.
+
 ## Currencies
 
 Spending totals and the monthly trend are computed **per currency** (grouped by the transaction's `iso_currency_code`); CAD and USD amounts are never added together and there is no combined figure. The dashboard shows a currency selector when more than one currency exists (default CAD, then the first; remembered in `localStorage` as `amexlens.currency`). Transactions with no currency code are grouped as `UNKNOWN`, shown as a plain number with a "currency unknown" caption. Month keys and the "this month" range use the America/Toronto date; each transaction is bucketed by its own civil `date`.
@@ -194,12 +229,14 @@ To override a category, click the bucket chip in the transactions table and pick
 
 ```
 app/
-  page.tsx                         dashboard
+  page.tsx                         cards overview (home): urgency banner, per-currency totals, card tiles
+  spending/page.tsx                spending dashboard (KPIs, buckets, trend)
   transactions/page.tsx            filterable table + override
-  settings/page.tsx                items, sync, system status
+  settings/page.tsx                items, sync, system status, privacy panel, delete-all-local-data
   login/page.tsx                   first-run setup (TOTP, recovery codes, passkey) and sign-in
   api/
     plaid/{link-token,exchange,sync}/route.ts
+    data/route.ts                  DELETE: revoke every item, then wipe local card data
     cards/route.ts                 GET overview; cards/[id]/refresh/route.ts POST live balance
     items/[id]/route.ts            disconnect a card
     items/route.ts                 list cards
@@ -212,6 +249,8 @@ app/
     health/route.ts                always-public { ok } probe
     system/route.ts                operator detail (storage, env, counts); session required
 components/                        SWR-driven client UI (AuthSettings.tsx = factors, sign out)
+                                   overview: CardTile, FieldValue (gap text), CurrencyTotals, UrgencyBanner;
+                                   settings: PrivacyPanel, DangerZone
 lib/
   auth/                            session.ts (requireSession, rotate), guard.ts (requireMutation, CSRF),
                                    totp.ts, passkey.ts, recovery.ts, lockout.ts, cookie.ts, from.ts
@@ -220,7 +259,7 @@ lib/
   env.ts                           validated env loader
   db.ts                            DB interface (ItemsRepo + TransactionsRepo + StatsRepo + CoreRepo) + driver dispatch
   db/sqlite/index.ts               opens the DB, runs migrations, composes the repos
-  db/sqlite/{items,transactions,stats,core}.ts   per-area better-sqlite3 repos
+  db/sqlite/{items,transactions,stats,core,cards,auth,maintenance}.ts   per-area better-sqlite3 repos
   db/migrations/                   NNNN_name.sql files plus code steps in index.ts
   audit.ts                         security_log writer
   log.ts                           JSON-line logger + redact() (tokens, secrets, cookies, Plaid error bodies)
