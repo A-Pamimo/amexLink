@@ -67,6 +67,8 @@ export const BUCKET_COLORS: Record<BucketKey, string> = {
   other: "#64748b",
 };
 
+export type ItemStatus = "active" | "needs_relink" | "consent_required" | "revoke_failed";
+
 export interface PlaidItem {
   id: string;
   item_id: string;
@@ -75,6 +77,8 @@ export interface PlaidItem {
   created_at: string;
   last_synced_at: string | null;
   cursor: string | null;
+  status: ItemStatus;
+  last_error: string | null;
 }
 
 export interface Transaction {
@@ -107,6 +111,18 @@ export interface SyncResult {
   added: number;
   modified: number;
   removed: number;
+}
+
+/** One entry of a sync response. Counts and a short code only; never provider text. */
+export interface ItemSyncSummary extends SyncResult {
+  item_id: string;
+  ok: boolean;
+  error_code?: string;
+}
+
+export interface SyncAllResult {
+  items: ItemSyncSummary[];
+  totals: SyncResult;
 }
 
 export interface TransactionFilters {

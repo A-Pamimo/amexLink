@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
+import { handleProviderError } from "@/lib/http/errors";
+import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
 import { getPlaid, plaidCountryCodes, TRANSACTIONS_PRODUCT } from "@/lib/plaid";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
+  const limited = rateLimited("link-token", 10, HOUR_MS);
+  if (limited) return limited;
+
   const plaid = getPlaid();
   try {
     const res = await plaid.linkTokenCreate({
@@ -16,10 +21,6 @@ export async function POST() {
     });
     return NextResponse.json({ link_token: res.data.link_token });
   } catch (err) {
-    const e = err as { response?: { data?: unknown }; message?: string };
-    return NextResponse.json(
-      { error: e?.response?.data ?? e?.message ?? "link_token failed" },
-      { status: 500 }
-    );
+    return handleProviderError(err, { route: "plaid/link-token" });
   }
 }

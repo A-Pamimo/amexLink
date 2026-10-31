@@ -1,13 +1,13 @@
 import type Database from "better-sqlite3";
 import { decrypt, DecryptError, encrypt } from "../../crypto";
-import type { ItemsRepo, PlaidItemInsert } from "../../db";
+import type { ItemLifecycleRepo, ItemsRepo, PlaidItemInsert } from "../../db";
 import { TokenUnreadableError } from "../../errors";
 import { log } from "../../log";
-import type { PlaidItem } from "../../types";
+import type { ItemStatus, PlaidItem } from "../../types";
 
 // Never `SELECT *` here: the token ciphertext must only leave SQL through getItemSecret.
 const ITEM_COLUMNS =
-  "id, item_id, institution_name, institution_id, created_at, last_synced_at, cursor";
+  "id, item_id, institution_name, institution_id, created_at, last_synced_at, cursor, status, last_error";
 
 /** AAD binds the ciphertext to its row; moving it to another item fails to decrypt. */
 function tokenAad(item_id: string): string {
@@ -22,6 +22,8 @@ interface ItemRow {
   created_at: string;
   last_synced_at: string | null;
   cursor: string | null;
+  status: string;
+  last_error: string | null;
 }
 
 function rowToItem(row: ItemRow): PlaidItem {
@@ -33,6 +35,8 @@ function rowToItem(row: ItemRow): PlaidItem {
     created_at: row.created_at,
     last_synced_at: row.last_synced_at ?? null,
     cursor: row.cursor ?? null,
+    status: (row.status ?? "active") as ItemStatus,
+    last_error: row.last_error ?? null,
   };
 }
 
@@ -115,6 +119,8 @@ export function itemsRepo(db: Database.Database): ItemsRepo {
         created_at,
         last_synced_at: null,
         cursor: null,
+        status: "active",
+        last_error: null,
       });
     },
     async updateItemSync(item_id, cursor, last_synced_at) {
@@ -122,6 +128,44 @@ export function itemsRepo(db: Database.Database): ItemsRepo {
     },
     async deleteItem(id) {
       deleteItemStmt.run(id);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// WP4 additions (append-only; kept apart from itemsRepo to avoid merge conflicts).
+// ---------------------------------------------------------------------------
+
+export function itemLifecycleRepo(db: Database.Database): ItemLifecycleRepo {
+  const setStatusStmt = db.prepare(
+    `UPDATE plaid_items SET status = ?, last_error = ? WHERE item_id = ?`
+  );
+  const setInstitutionStmt = db.prepare(
+    `UPDATE plaid_items SET institution_id = ?, institution_name = ? WHERE item_id = ?`
+  );
+  // `cursor IS ?` is NULL-safe: a first sync (cursor NULL) matches expected null. Rows written by
+  // older versions may hold "" (meaning "no cursor"); expected null matches those too.
+  const casCursorStmt = db.prepare(
+    `UPDATE plaid_items SET cursor = ?, last_synced_at = ?
+     WHERE item_id = ? AND (cursor IS ? OR (? IS NULL AND cursor = ''))`
+  );
+
+  return {
+    async setItemStatus(item_id, status, last_error = null) {
+      setStatusStmt.run(status, last_error, item_id);
+    },
+    async updateItemInstitution(item_id, institution_id, institution_name) {
+      setInstitutionStmt.run(institution_id, institution_name, item_id);
+    },
+    async casUpdateCursor(item_id, expectedCursor, newCursor, last_synced_at) {
+      const res = casCursorStmt.run(
+        newCursor,
+        last_synced_at,
+        item_id,
+        expectedCursor,
+        expectedCursor
+      );
+      return res.changes === 1;
     },
   };
 }
