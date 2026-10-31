@@ -29,5 +29,12 @@ export function coreRepo(db: Database.Database): CoreRepo {
         detail: row.detail ?? null,
       });
     },
+    async ping() {
+      const r = db.prepare(`SELECT 1 AS ok`).get() as { ok: number } | undefined;
+      return r?.ok === 1;
+    },
+    async vacuum() {
+      db.exec(`VACUUM`);
+    },
   };
 }

@@ -1,10 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import {
-  usePlaidLink,
-  type PlaidLinkOnSuccess,
-  type PlaidLinkOnSuccessMetadata,
-} from "react-plaid-link";
+import { usePlaidLink, type PlaidLinkOnSuccess } from "react-plaid-link";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { apiFetch, errorMessage } from "@/lib/client/api";
@@ -29,25 +25,27 @@ export function PlaidLinkButton({ onLinked }: { onLinked?: () => void }) {
   }, []);
 
   const onSuccess = useCallback<PlaidLinkOnSuccess>(
-    async (public_token: string | null, metadata: PlaidLinkOnSuccessMetadata) => {
+    async (public_token: string | null) => {
       if (!public_token) {
         toast.error("Could not finish linking (no_public_token)");
         return;
       }
       try {
-        const body = await apiFetch<{ item_id: string; sync: { added: number } }>(
-          "/api/plaid/exchange",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              public_token,
-              institution: metadata?.institution ?? null,
-            }),
-          }
-        );
-        toast.success(
-          `Linked ${metadata?.institution?.name ?? "account"} (synced ${body.sync.added} tx)`
-        );
+        // Only the public token goes to the server; institution metadata comes from Plaid there.
+        const body = await apiFetch<{
+          item_id: string;
+          institution_name: string | null;
+          sync: { ok: true; added: number } | { ok: false; code: string };
+        }>("/api/plaid/exchange", {
+          method: "POST",
+          body: JSON.stringify({ public_token }),
+        });
+        const name = body.institution_name ?? "account";
+        if (body.sync.ok) {
+          toast.success(`Linked ${name} (synced ${body.sync.added} tx)`);
+        } else {
+          toast.warning(`Linked ${name}, but the first sync failed (${body.sync.code}). Try Sync again.`);
+        }
         onLinked?.();
         mutate("/api/items");
         mutate(
