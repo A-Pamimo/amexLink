@@ -7,6 +7,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
+import { log } from "./log";
 
 /**
  * Crypto core (SECURITY.md 3.1 / 3.2).
@@ -19,7 +20,7 @@ import {
  * - Wire format: `v<version>.<iv b64url>.<tag b64url>.<ct b64url>`. The version
  *   selects a key in the key ring, which is how rotation adds `v2` later.
  *
- * Nothing in this module logs, and no error message carries key material,
+ * Nothing in this module logs key material, and no error message carries it,
  * plaintext or ciphertext.
  */
 
@@ -95,11 +96,10 @@ function readKeyFile(file: string): Buffer {
     const mode = fs.statSync(file).mode & 0o777;
     if ((mode & 0o077) !== 0 && !warnedFileMode) {
       warnedFileMode = true;
-      console.warn(
-        `[crypto] TOKEN_ENCRYPTION_KEY_FILE is group/world readable (mode ${mode
-          .toString(8)
-          .padStart(3, "0")}). Run: chmod 600 <file>`
-      );
+      log.warn("data_key_file_mode", {
+        mode: mode.toString(8).padStart(3, "0"),
+        hint: "TOKEN_ENCRYPTION_KEY_FILE is group/world readable; run: chmod 600 <file>",
+      });
     }
   } catch {
     // stat failed after a successful read; the mode check is best effort.
