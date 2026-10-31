@@ -38,8 +38,17 @@ All live in `.env.local` (gitignored). `.env.example` documents the full surface
 | `DATABASE_URL` | conditional | URL | required for `libsql` / `postgres` |
 | `AUTH_MODE` | no | `none` \| `password` \| `passkey` | default `none` |
 | `AUTH_PASSWORD` | conditional | string | required when `AUTH_MODE=password` |
+| `ENABLE_HSTS` | no | `0` \| `1` | default `0`; set `1` only behind HTTPS |
 
 Validation runs at server startup (`lib/env.ts`). Missing or invalid values throw a clear error before anything tries to talk to Plaid or the DB.
+
+## Security headers
+
+`next.config.mjs` applies the headers from `docs/SECURITY.md` 3.10 to every response (built in `lib/security-headers.mjs`): a Content-Security-Policy limited to this origin plus Plaid Link (`cdn.plaid.com`) and the Plaid API host for the configured `PLAID_ENV`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, a locked-down `Permissions-Policy`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (issuer OAuth popups), and `Cross-Origin-Resource-Policy: same-origin`. `Cache-Control: no-store` is set on `/api/*` and HTML routes. `Cross-Origin-Embedder-Policy` is never set because it breaks Plaid Link.
+
+`Strict-Transport-Security` is sent only when `ENABLE_HSTS=1`. Enable it only when the app is served over HTTPS; browsers cache it for a year.
+
+Known deviation: `script-src` still includes `'unsafe-inline'` because Next.js emits inline bootstrap scripts and there is no per-request nonce yet. A follow-up (WP5b) adds a middleware nonce and removes it. In `next dev` the policy also allows `'unsafe-eval'` and localhost websockets for HMR.
 
 ## Storage modes
 
