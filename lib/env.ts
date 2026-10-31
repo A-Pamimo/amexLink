@@ -87,6 +87,8 @@ export const env = Object.freeze({
   AUTH_PASSWORD: process.env.AUTH_PASSWORD ?? null,
 
   // WP3: data key
+  TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY ?? null,
+  TOKEN_ENCRYPTION_KEY_FILE: process.env.TOKEN_ENCRYPTION_KEY_FILE ?? null,
 
   // WP4: cron
 });

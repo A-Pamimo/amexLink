@@ -57,7 +57,8 @@ File map:
 
 ## 4. What is NOT done
 
-- **WP0 (foundation) landed** on branch `wp0-foundation`: lockfile, `next@15.5.28` pinned, Node 22, vitest (`npm test`), CI, DB/client seams. Still open:
+- **WP0 (foundation) landed** on branch `wp0-foundation`: lockfile, `next@15.5.28` pinned, Node 22, vitest (`npm test`), CI, DB/client seams.
+- **WP1 (crypto core) landed** on branch `wp1-crypto-core` (stacks on WP0): `lib/crypto.ts` (AES-256-GCM `v1.` ciphertext with AAD, versioned key ring, `constantTimeEqual`/`sha256Hex`/`randomToken`), `npm run key:generate`, boot refuses to start without a 32-byte `TOKEN_ENCRYPTION_KEY`. Tokens are not yet stored encrypted; that is WP3. Still open:
 - Any Phase 0 security fix beyond the above. Any liabilities/balance code. Cards overview UI. Reminders. Red-team pass. Test coverage beyond the foundation suites. Multi-user / iOS.
 
 ## 5. Security bar (mandatory)
