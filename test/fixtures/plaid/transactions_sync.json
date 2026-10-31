@@ -1,0 +1,63 @@
+{
+  "added": [
+    {
+      "transaction_id": "tx_sbux_001",
+      "account_id": "acc_credit_001",
+      "amount": 6.45,
+      "iso_currency_code": "CAD",
+      "unofficial_currency_code": null,
+      "date": "2026-10-20",
+      "name": "STARBUCKS #1234 TORONTO ON",
+      "merchant_name": "Starbucks",
+      "pending": false,
+      "logo_url": "https://example.test/logos/starbucks.png",
+      "personal_finance_category": {
+        "primary": "FOOD_AND_DRINK",
+        "detailed": "FOOD_AND_DRINK_COFFEE",
+        "confidence_level": "VERY_HIGH"
+      },
+      "personal_finance_category_icon_url": "https://example.test/icons/food.png"
+    },
+    {
+      "transaction_id": "tx_uber_002",
+      "account_id": "acc_credit_001",
+      "amount": 23.1,
+      "iso_currency_code": "CAD",
+      "unofficial_currency_code": null,
+      "date": "2026-10-21",
+      "name": "UBER TRIP HELP.UBER.COM",
+      "merchant_name": "Uber",
+      "pending": false,
+      "logo_url": null,
+      "personal_finance_category": {
+        "primary": "TRANSPORTATION",
+        "detailed": "TRANSPORTATION_TAXIS_AND_RIDE_SHARING",
+        "confidence_level": "VERY_HIGH"
+      },
+      "personal_finance_category_icon_url": "https://example.test/icons/transport.png"
+    },
+    {
+      "transaction_id": "tx_pay_003",
+      "account_id": "acc_credit_001",
+      "amount": -500,
+      "iso_currency_code": "CAD",
+      "unofficial_currency_code": null,
+      "date": "2026-10-22",
+      "name": "PAYMENT THANK YOU",
+      "merchant_name": null,
+      "pending": true,
+      "logo_url": null,
+      "personal_finance_category": {
+        "primary": "LOAN_PAYMENTS",
+        "detailed": "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+        "confidence_level": "HIGH"
+      },
+      "personal_finance_category_icon_url": null
+    }
+  ],
+  "modified": [],
+  "removed": [],
+  "next_cursor": "cursor-after-first-sync",
+  "has_more": false,
+  "request_id": "req_fixture_001"
+}

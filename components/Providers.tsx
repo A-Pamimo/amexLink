@@ -1,21 +1,13 @@
 "use client";
 import { SWRConfig } from "swr";
 import { Toaster } from "sonner";
-
-const fetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
-  }
-  return res.json();
-};
+import { swrFetcher } from "@/lib/client/api";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SWRConfig
       value={{
-        fetcher,
+        fetcher: swrFetcher,
         revalidateOnFocus: false,
         dedupingInterval: 4000,
       }}

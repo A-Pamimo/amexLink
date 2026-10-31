@@ -40,15 +40,29 @@ export interface StatsRange {
   include_non_spending?: boolean;
 }
 
-export interface DB {
-  // items
+export interface SecurityLogInsert {
+  at?: string;
+  event: string;
+  item_id?: string | null;
+  outcome?: string | null;
+  detail?: string | null;
+}
+
+export interface ItemsRepo {
   listItems(): Promise<PlaidItem[]>;
+  /** Lookup by our internal row id (`plaid_items.id`). */
+  getItemById(id: string): Promise<PlaidItem | null>;
+  /** Lookup by Plaid's item_id. */
   getItemByItemId(item_id: string): Promise<PlaidItem | null>;
+  /** The only way to read an access token. Never log or return the result. */
+  getItemSecret(item_id: string): Promise<{ access_token: string } | null>;
+  /** Returns the stored item WITHOUT the access token. */
   insertItem(item: PlaidItemInsert): Promise<PlaidItem>;
   updateItemSync(item_id: string, cursor: string, last_synced_at: string): Promise<void>;
   deleteItem(id: string): Promise<void>;
+}
 
-  // transactions
+export interface TransactionsRepo {
   upsertAddedTransactions(rows: TransactionInsert[]): Promise<number>;
   upsertModifiedTransactions(rows: TransactionInsert[]): Promise<number>;
   removeTransactions(ids: string[]): Promise<number>;
@@ -56,11 +70,21 @@ export interface DB {
   patchTransactionBucket(id: string, bucket: BucketKey): Promise<Transaction | null>;
   resetTransactionBucket(id: string): Promise<Transaction | null>;
   countTransactions(): Promise<number>;
+}
 
-  // stats
+export interface StatsRepo {
   bucketTotals(range: StatsRange): Promise<BucketTotals>;
   monthlyTrend(months: number, item_id?: string, include_non_spending?: boolean): Promise<MonthlyTrendPoint[]>;
 }
+
+export interface CoreRepo {
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string): Promise<void>;
+  appendSecurityLog(row: SecurityLogInsert): Promise<void>;
+}
+
+// Add one XRepo interface above and one `extends` here per feature area.
+export interface DB extends ItemsRepo, TransactionsRepo, StatsRepo, CoreRepo {}
 
 let cached: DB | null = null;
 

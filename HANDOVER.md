@@ -37,7 +37,7 @@ File map:
 | `app/api/auth/{login,logout}`, `middleware.ts` | Optional password gate (weak, see SECURITY.md) |
 | `app/api/health/route.ts` | Health check |
 | `lib/plaid.ts` | Plaid client |
-| `lib/db.ts`, `lib/db/sqlite.ts`, `lib/db/migrations/0001_init.sql` | DB interface, SQLite impl, schema |
+| `lib/db.ts`, `lib/db/sqlite/*.ts`, `lib/db/migrations/` | DB interfaces (per-area repos), SQLite impl, schema + code migrations |
 | `lib/transactions.ts`, `lib/categorize.ts` | Sync + bucket rules |
 | `lib/env.ts` | Env validation |
 | `components/*` | UI components |
@@ -57,7 +57,8 @@ File map:
 
 ## 4. What is NOT done
 
-- Any Phase 0 security fix. Any liabilities/balance code. Cards overview UI. Reminders. Red-team pass. Tests (`npm test` does not exist yet). Lockfile. Multi-user / iOS.
+- **WP0 (foundation) landed** on branch `wp0-foundation`: lockfile, `next@15.5.28` pinned, Node 22, vitest (`npm test`), CI, DB/client seams. Still open:
+- Any Phase 0 security fix beyond the above. Any liabilities/balance code. Cards overview UI. Reminders. Red-team pass. Test coverage beyond the foundation suites. Multi-user / iOS.
 
 ## 5. Security bar (mandatory)
 

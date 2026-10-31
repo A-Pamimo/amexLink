@@ -7,16 +7,19 @@ export const dynamic = "force-dynamic";
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const db = await getDB();
-  const items = await db.listItems();
-  const target = items.find((i) => i.id === params.id);
+  const target = await db.getItemById(id);
   if (!target) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  // TODO(WP4): revoke at Plaid first and keep the local token if itemRemove fails
+  // (today we delete locally even on failure, orphaning a still-billed Item).
   try {
-    await getPlaid().itemRemove({ access_token: target.access_token });
+    const secret = await db.getItemSecret(target.item_id);
+    if (secret) await getPlaid().itemRemove({ access_token: secret.access_token });
   } catch {
     // Best-effort: continue removing locally even if Plaid call fails.
   }
