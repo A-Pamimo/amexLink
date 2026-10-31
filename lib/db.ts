@@ -251,6 +251,16 @@ export interface AuthRepo {
   purgeChallenges(now: string): Promise<number>;
 }
 
+/** WP7: owner-initiated erase of all card data. security_log, sessions and auth factors are kept. */
+export interface MaintenanceRepo {
+  /**
+   * One transaction: delete transactions, account_fields, accounts, plaid_items and every
+   * `settings` key except `webauthn_user_id` and `plaid_client_user_id`. Does NOT touch
+   * `security_log`, sessions, auth_state, passkeys or recovery codes. Returns the row counts removed.
+   */
+  deleteAllCardData(): Promise<{ items: number; accounts: number; transactions: number }>;
+}
+
 // Add one XRepo interface above and one `extends` here per feature area.
 export interface DB
   extends ItemsRepo,
@@ -259,7 +269,8 @@ export interface DB
     StatsRepo,
     CoreRepo,
     CardsRepo,
-    AuthRepo {}
+    AuthRepo,
+    MaintenanceRepo {}
 
 let cached: DB | null = null;
 

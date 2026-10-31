@@ -41,3 +41,49 @@ export function formatDate(d: string): string {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${months[parseInt(m, 10) - 1] ?? m} ${parseInt(day, 10)}, ${y}`;
 }
+
+/** ISO timestamp -> "2026-10-31 08:00" in America/Toronto. Returns "" for an invalid timestamp. */
+export function formatTimestampToronto(iso: string): string {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(t);
+  const g = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${g("year")}-${g("month")}-${g("day")} ${g("hour")}:${g("minute")}`;
+}
+
+/** 0.2345 -> "23.5%". `ratio` is a fraction (1 = 100%); one decimal, a trailing ".0" is dropped. */
+export function formatPercent(ratio: number): string {
+  if (!Number.isFinite(ratio)) return "n/a";
+  const pct = Math.round(ratio * 1000) / 10;
+  return `${Number.isInteger(pct) ? pct.toFixed(0) : pct.toFixed(1)}%`;
+}
+
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+function dayNumber(d: string): number | null {
+  const m = ISO_DAY.exec(d);
+  return m ? Math.round(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86_400_000) : null;
+}
+
+/**
+ * Relative wording for a civil date: "today", "in 3 days", "2 days ago", "in 1 day", "1 day ago".
+ * `todayISO` is the America/Toronto date (inject it; this function never reads the clock).
+ * Returns "" when either date is not YYYY-MM-DD.
+ */
+export function formatDateRelative(dateISO: string, todayISO: string): string {
+  const a = dayNumber(todayISO);
+  const b = dayNumber(dateISO);
+  if (a === null || b === null) return "";
+  const d = b - a;
+  if (d === 0) return "today";
+  const n = Math.abs(d);
+  const unit = n === 1 ? "day" : "days";
+  return d > 0 ? `in ${n} ${unit}` : `${n} ${unit} ago`;
+}

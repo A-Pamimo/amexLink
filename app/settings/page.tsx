@@ -3,8 +3,10 @@ import useSWR, { useSWRConfig } from "swr";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AuthSettings } from "@/components/AuthSettings";
+import { DangerZone } from "@/components/DangerZone";
 import { ItemActions } from "@/components/ItemActions";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
+import { PrivacyPanel } from "@/components/PrivacyPanel";
 import { SyncButton } from "@/components/SyncButton";
 import { apiFetch, errorMessage } from "@/lib/client/api";
 import type { ItemStatus, PlaidItem } from "@/lib/types";
@@ -161,6 +163,9 @@ export default function SettingsPage() {
           </dl>
         </div>
       </section>
+
+      <PrivacyPanel />
+      <DangerZone />
     </div>
   );
 }
