@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DB } from "../../db";
 import { steps as codeSteps, type MigrationStep } from "../migrations";
+import { authRepo } from "./auth";
 import { coreRepo } from "./core";
 import { itemsRepo } from "./items";
 import { statsRepo } from "./stats";
@@ -85,5 +86,6 @@ export function createSqliteDB(dbPath: string): DB {
     ...transactionsRepo(db),
     ...statsRepo(db),
     ...coreRepo(db),
+    ...authRepo(db),
   };
 }

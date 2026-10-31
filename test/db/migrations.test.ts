@@ -6,18 +6,29 @@ import { closeApp, loadApp } from "../helpers/app";
 afterEach(() => closeApp());
 
 describe("migrations", () => {
-  it("applies 0001 and 0002 on a fresh DB", async () => {
+  it("applies 0001, 0002 and 0003 on a fresh DB", async () => {
     const { dir } = await loadApp();
     const raw = new Database(path.join(dir, "test.sqlite"), { readonly: true });
     const ids = (raw.prepare("SELECT id FROM _migrations ORDER BY id").all() as Array<{ id: number }>).map(
       (r) => r.id
     );
-    expect(ids).toEqual([1, 2]);
+    // Later work packages append 0004+; the prefix must stay exactly this.
+    expect(ids.slice(0, 3)).toEqual([1, 2, 3]);
 
     const tables = (
       raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
     ).map((r) => r.name);
-    for (const t of ["plaid_items", "transactions", "settings", "security_log"]) {
+    for (const t of [
+      "plaid_items",
+      "transactions",
+      "settings",
+      "security_log",
+      "sessions",
+      "auth_state",
+      "passkeys",
+      "recovery_codes",
+      "auth_challenges",
+    ]) {
       expect(tables).toContain(t);
     }
     raw.close();

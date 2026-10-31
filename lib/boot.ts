@@ -16,4 +16,23 @@ export function assertBootConfig(): void {
   // WP3: data key. Refuse to start without a valid 32-byte key; there is no
   // plaintext fallback for tokens (SECURITY.md 3.1 "fail closed").
   loadDataKey();
+
+  // WP2: auth (SECURITY.md 3.1 "fail closed", F-01).
+  const production = process.env.NODE_ENV === "production";
+  if (production && env.AUTH_MODE === "none") {
+    throw new Error(
+      "AUTH_MODE=none is refused in production. Set AUTH_MODE=required, APP_ORIGIN and AUTH_SETUP_TOKEN."
+    );
+  }
+  if (env.AUTH_MODE === "required" && !env.APP_ORIGIN) {
+    throw new Error(
+      "AUTH_MODE=required needs APP_ORIGIN (the exact browser origin, e.g. https://cards.example)."
+    );
+  }
+  if (production && env.APP_ORIGIN && !env.APP_ORIGIN.startsWith("https://")) {
+    throw new Error("APP_ORIGIN must be https:// in production (the session cookie is Secure).");
+  }
+  if (production && env.COOKIE_INSECURE_DEV) {
+    throw new Error("COOKIE_INSECURE_DEV=1 is refused in production.");
+  }
 }

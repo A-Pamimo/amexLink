@@ -83,8 +83,86 @@ export interface CoreRepo {
   appendSecurityLog(row: SecurityLogInsert): Promise<void>;
 }
 
+// --- WP2: auth ---------------------------------------------------------------
+
+export interface SessionRow {
+  /** sha256Hex(raw cookie token). The raw token is never stored. */
+  id: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+}
+
+export interface AuthStateRow {
+  /** AES-256-GCM ciphertext (lib/crypto encrypt, AAD "auth_state:totp"), or null. */
+  totp_secret_ct: string | null;
+  totp_confirmed_at: string | null;
+  /** Last accepted TOTP step; codes for this step or earlier are replays. */
+  totp_last_step: number | null;
+  /** Random per-install WebAuthn user handle (base64url). */
+  webauthn_user_id: string | null;
+  updated_at: string;
+}
+
+export type AuthStatePatch = Partial<Omit<AuthStateRow, "updated_at">>;
+
+export interface PasskeyRow {
+  /** Credential id (base64url). */
+  id: string;
+  public_key: Buffer;
+  counter: number;
+  transports: string[] | null;
+  device_type: string | null;
+  backed_up: boolean | null;
+  label: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export type PasskeyInsert = Omit<PasskeyRow, "created_at" | "last_used_at">;
+
+export type ChallengeKind = "reg" | "auth";
+
+export interface AuthRepo {
+  createSession(row: SessionRow): Promise<void>;
+  getSession(id: string): Promise<SessionRow | null>;
+  touchSession(id: string, last_seen_at: string): Promise<void>;
+  deleteSession(id: string): Promise<void>;
+  deleteAllSessions(): Promise<number>;
+  purgeExpiredSessions(now: string): Promise<number>;
+
+  getAuthState(): Promise<AuthStateRow | null>;
+  /** Merge `patch` into the single auth_state row (created on first call). */
+  upsertAuthState(patch: AuthStatePatch): Promise<AuthStateRow>;
+
+  listPasskeys(): Promise<PasskeyRow[]>;
+  getPasskey(id: string): Promise<PasskeyRow | null>;
+  insertPasskey(row: PasskeyInsert): Promise<void>;
+  updatePasskeyCounter(id: string, counter: number, last_used_at: string): Promise<void>;
+  deletePasskey(id: string): Promise<void>;
+
+  /** Delete every recovery code and insert these hashes. */
+  replaceRecoveryCodes(hashes: string[]): Promise<void>;
+  /** Atomically mark one unused code as used. False if unknown or already used. */
+  consumeRecoveryCode(hash: string): Promise<boolean>;
+  countRecoveryCodes(): Promise<{ remaining: number; total: number }>;
+
+  createChallenge(row: {
+    id: string;
+    kind: ChallengeKind;
+    challenge: string;
+    expires_at: string;
+  }): Promise<void>;
+  /**
+   * Atomically consume a live challenge (right kind, not expired at `now`, not
+   * yet consumed). Returns the challenge value or null.
+   */
+  consumeChallenge(id: string, kind: ChallengeKind, now: string): Promise<string | null>;
+  purgeChallenges(now: string): Promise<number>;
+}
+
 // Add one XRepo interface above and one `extends` here per feature area.
-export interface DB extends ItemsRepo, TransactionsRepo, StatsRepo, CoreRepo {}
+export interface DB extends ItemsRepo, TransactionsRepo, StatsRepo, CoreRepo, AuthRepo {}
 
 let cached: DB | null = null;
 
