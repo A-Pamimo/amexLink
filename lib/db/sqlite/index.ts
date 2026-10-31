@@ -5,7 +5,7 @@ import path from "node:path";
 import type { DB } from "../../db";
 import { steps as codeSteps, type MigrationStep } from "../migrations";
 import { coreRepo } from "./core";
-import { itemsRepo } from "./items";
+import { itemLifecycleRepo, itemsRepo } from "./items";
 import { statsRepo } from "./stats";
 import { transactionsRepo } from "./transactions";
 
@@ -82,6 +82,7 @@ export function createSqliteDB(dbPath: string): DB {
 
   return {
     ...itemsRepo(db),
+    ...itemLifecycleRepo(db),
     ...transactionsRepo(db),
     ...statsRepo(db),
     ...coreRepo(db),

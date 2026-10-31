@@ -1,30 +1,17 @@
 import { NextResponse } from "next/server";
 import { getDB } from "@/lib/db";
-import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Public liveness probe: nothing but ok / not ok. Detail lives in /api/system (behind the session).
 export async function GET() {
-  let items_count = 0;
-  let tx_count = 0;
-  let db_ok = false;
+  const headers = { "Cache-Control": "no-store" };
   try {
     const db = await getDB();
-    const items = await db.listItems();
-    items_count = items.length;
-    tx_count = await db.countTransactions();
-    db_ok = true;
+    if (await db.ping()) return NextResponse.json({ ok: true }, { headers });
   } catch {
-    db_ok = false;
+    // fall through
   }
-  return NextResponse.json({
-    db_ok,
-    storage: env.STORAGE,
-    auth_mode: env.AUTH_MODE,
-    plaid_env: env.PLAID_ENV,
-    country_codes: env.PLAID_COUNTRY_CODES,
-    items_count,
-    tx_count,
-  });
+  return NextResponse.json({ ok: false }, { status: 503, headers });
 }

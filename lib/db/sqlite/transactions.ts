@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { categorizeTx } from "../../categorize";
-import type { TransactionInsert, TransactionsRepo } from "../../db";
+import type { TransactionInsert, TransactionPage, TransactionsRepo } from "../../db";
 import {
   NON_SPENDING_BUCKETS,
   type BucketKey,
@@ -46,6 +46,11 @@ function rowToTx(row: TxRow): Transaction {
     pending: row.pending,
     created_at: row.created_at,
   };
+}
+
+/** Escape `\`, `%` and `_` for use with `LIKE ? ESCAPE '\'`. */
+export function escapeLike(q: string): string {
+  return q.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 export function transactionsRepo(db: Database.Database): TransactionsRepo {
@@ -180,6 +185,12 @@ export function transactionsRepo(db: Database.Database): TransactionsRepo {
     return count;
   }
 
+  const applyPage = db.transaction((page: TransactionPage) => ({
+    added: upsertAdded(page.added),
+    modified: upsertModified(page.modified),
+    removed: remove(page.removedIds),
+  }));
+
   function buildList(filters: TransactionFilters): { sql: string; params: SqlParam[] } {
     const where: string[] = [];
     const params: SqlParam[] = [];
@@ -200,8 +211,9 @@ export function transactionsRepo(db: Database.Database): TransactionsRepo {
       params.push(filters.item_id);
     }
     if (filters.q) {
-      where.push("(name LIKE ? OR merchant_name LIKE ?)");
-      const like = `%${filters.q}%`;
+      // Escape LIKE metacharacters so a search for "100%" is literal, not a wildcard.
+      where.push("(name LIKE ? ESCAPE '\\' OR merchant_name LIKE ? ESCAPE '\\')");
+      const like = `%${escapeLike(filters.q)}%`;
       params.push(like, like);
     }
     if (!filters.include_non_spending) {
@@ -249,6 +261,10 @@ export function transactionsRepo(db: Database.Database): TransactionsRepo {
     async countTransactions() {
       const r = countTxStmt.get() as { c: number };
       return r.c;
+    },
+    async applyTransactionPage(page) {
+      // Nested db.transaction calls inside the helpers become savepoints.
+      return applyPage(page);
     },
   };
 }
