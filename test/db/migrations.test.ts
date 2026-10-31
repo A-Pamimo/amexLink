@@ -6,13 +6,13 @@ import { closeApp, loadApp } from "../helpers/app";
 afterEach(() => closeApp());
 
 describe("migrations", () => {
-  it("applies 0001 and 0002 on a fresh DB", async () => {
+  it("applies 0001, 0002 and the 0004 token_ct code step on a fresh DB", async () => {
     const { dir } = await loadApp();
     const raw = new Database(path.join(dir, "test.sqlite"), { readonly: true });
     const ids = (raw.prepare("SELECT id FROM _migrations ORDER BY id").all() as Array<{ id: number }>).map(
       (r) => r.id
     );
-    expect(ids).toEqual([1, 2]);
+    expect(ids).toEqual([1, 2, 4]);
 
     const tables = (
       raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
@@ -33,6 +33,8 @@ describe("migrations", () => {
     fs.writeFileSync(path.join(dir, "0001_a.sql"), "CREATE TABLE a (x INTEGER);");
     fs.writeFileSync(path.join(dir, "0003_c.sql"), "CREATE TABLE c (x INTEGER);");
     const order: string[] = [];
+    // Swap the real code steps (0004 token_ct) out for this synthetic set.
+    const realSteps = migrations.steps.splice(0, migrations.steps.length);
     migrations.steps.push(
       {
         id: 2,
@@ -64,7 +66,7 @@ describe("migrations", () => {
       expect(order).toEqual(["2"]);
     } finally {
       db.close();
-      migrations.steps.length = 0;
+      migrations.steps.splice(0, migrations.steps.length, ...realSteps);
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -76,11 +78,12 @@ describe("migrations", () => {
     const migrations = await import("@/lib/db/migrations");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amexlens-mig-"));
     fs.writeFileSync(path.join(dir, "0001_a.sql"), "SELECT 1;");
+    const realSteps = migrations.steps.splice(0, migrations.steps.length);
     migrations.steps.push({ id: 1, name: "dup", sql: "SELECT 1;" });
     try {
       expect(() => collectMigrations(dir)).toThrow(/Duplicate migration id 1/);
     } finally {
-      migrations.steps.length = 0;
+      migrations.steps.splice(0, migrations.steps.length, ...realSteps);
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
