@@ -266,7 +266,7 @@ Settings has a *Privacy and data* panel (what is pulled, that Plaid Inc. process
 
 1. Every item is revoked at Plaid first, one after another, with the same revoke-then-delete path as disconnecting a single card.
 2. If any revoke fails the response is `502 { error: { code: "revoke_incomplete" }, results: [{ item_id, ok, code? }] }` and nothing else is deleted. Items that did revoke are already gone, as with a normal disconnect; the failed ones stay (`revoke_failed`) so you can fix the cause and run it again.
-3. If all revokes succeed (or there were no items), one transaction deletes `transactions`, `account_fields`, `accounts`, `plaid_items` and every `settings` key except `webauthn_user_id` and `plaid_client_user_id`, then the database is `VACUUM`ed and the session cookie is rotated.
+3. If all revokes succeed (or there were no items), one transaction deletes `transactions`, `account_fields`, `accounts`, `plaid_items` and every `settings` key except `plaid_client_user_id` (the WebAuthn user handle lives in `auth_state`, which is kept), then the database is `VACUUM`ed and the session cookie is rotated.
 
 The `security_log` table is **kept** and gets a `data_delete_all` row (counts only). Plaid retains data under its own policy; this app does not claim Plaid deleted its copy. Sign-in factors (TOTP, passkeys, recovery codes) are not touched, and backups already written under `data/backups/` are not deleted.
 
