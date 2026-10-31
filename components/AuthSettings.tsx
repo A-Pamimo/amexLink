@@ -8,7 +8,8 @@ import { apiFetch, errorMessage } from "@/lib/client/api";
 interface AuthStatus {
   mode: "none" | "required";
   setup_required: boolean;
-  factors: { totp: boolean; passkeys: number; recovery_codes_remaining: number };
+  /** `recovery_codes_remaining` is null until the server sees a valid session. */
+  factors: { totp: boolean; passkeys: number; recovery_codes_remaining: number | null };
 }
 
 const buttonClass =
@@ -120,8 +121,14 @@ export function AuthSettings() {
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wide text-slate-400">Recovery codes left</dt>
-          <dd className={f.recovery_codes_remaining <= 2 ? "text-amber-300" : "text-slate-100"}>
-            {f.recovery_codes_remaining}
+          <dd
+            className={
+              f.recovery_codes_remaining !== null && f.recovery_codes_remaining <= 2
+                ? "text-amber-300"
+                : "text-slate-100"
+            }
+          >
+            {f.recovery_codes_remaining ?? "—"}
           </dd>
         </div>
       </dl>
