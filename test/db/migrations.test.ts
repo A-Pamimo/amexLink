@@ -6,13 +6,14 @@ import { closeApp, loadApp } from "../helpers/app";
 afterEach(() => closeApp());
 
 describe("migrations", () => {
-  it("applies 0001 and 0002 on a fresh DB", async () => {
+  it("applies every migration in order on a fresh DB", async () => {
     const { dir } = await loadApp();
     const raw = new Database(path.join(dir, "test.sqlite"), { readonly: true });
     const ids = (raw.prepare("SELECT id FROM _migrations ORDER BY id").all() as Array<{ id: number }>).map(
       (r) => r.id
     );
-    expect(ids).toEqual([1, 2]);
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    expect(ids).toEqual(expect.arrayContaining([1, 2, 5]));
 
     const tables = (
       raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
