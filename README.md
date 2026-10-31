@@ -95,7 +95,7 @@ The setup token is consulted **only while zero factors are enrolled**; afterward
 - Every state-changing request must come from `APP_ORIGIN` (`Origin`/`Referer` check) and carry the `X-AmexLens-Request: 1` header (`lib/client/api.ts` adds it). Otherwise `403 { error: { code: "csrf" } }`.
 - `middleware.ts` only redirects browsers without a token-shaped cookie to `/login` (API calls get `401` JSON). The real check is `requireSession` / `requireMutation` as the first statement of every handler, so a middleware bypass changes nothing.
 
-**`AUTH_MODE=none`** disables all of this. It exists for local sandbox work and the test suite; the server refuses to start with it in production, and also refuses `COOKIE_INSECURE_DEV=1` or an `http://` `APP_ORIGIN` in production.
+**`AUTH_MODE=none`** disables all of this. It exists for local sandbox work and the test suite; the server refuses to start with it in a production build (`NODE_ENV=production`) or with live Plaid credentials (`PLAID_ENV=production`). With `PLAID_ENV=production` it also refuses `COOKIE_INSECURE_DEV=1` and an `http://` `APP_ORIGIN` (`docs/SECURITY.md` 3.1); a production build with sandbox keys may still run over plain http on a LAN/Tailscale host.
 
 `/api/health` is always reachable so external monitors don't need credentials. It answers `{ "ok": true }` (or `{ "ok": false }` with HTTP 503) and nothing else. Operator detail (storage, Plaid env, auth mode, country codes, counts) lives in `GET /api/system`, which requires a session.
 
@@ -222,9 +222,9 @@ lib/
   client/api.ts                    browser fetch wrapper (apiFetch, ApiError)
   plaid.ts                         PlaidApi factory
   transactions.ts                  /transactions/sync loop (per-item lock, cursor CAS, SyncError)
-  sync/{lock,authorize}.ts         per-item mutex; CRON_SECRET bearer check for /api/plaid/sync
+  sync/{lock,authorize}.ts         per-item mutex; /api/plaid/sync authz (CRON_SECRET bearer OR session + CSRF)
   items/revoke.ts                  revoke-then-delete
-  http/{errors,params,rate-limit,log-shim}.ts   safe error bodies, query parsing, in-process rate limits
+  http/{errors,params,rate-limit}.ts            safe error bodies, query parsing, in-process rate limits
   date.ts, format.ts, id.ts        small helpers
 middleware.ts                      cookie-shape gate (redirect / 401); handlers do the real check
 scripts/sync.mjs                   cron-friendly sync trigger (CRON_SECRET bearer)
@@ -274,7 +274,7 @@ chmod 600 amexlens-backup.key
 
 1. Copy the newest `data/backups/amexlens-<stamp>.sqlite.age` to the machine that holds the identity.
 2. `AGE_IDENTITY_FILE=./amexlens-backup.key npm run restore:check -- amexlens-<stamp>.sqlite.age`
-3. Expect a line like `migrations=1,2,4 items=<n> integrity=ok`. The script decrypts to a `0600` temp file, opens it read-only, prints only those markers, and deletes the temp file.
+3. Expect a line like `migrations=1,2,3,4,5,6 items=<n> integrity=ok`. The script decrypts to a `0600` temp file, opens it read-only, prints only those markers, and deletes the temp file.
 4. To actually restore: stop the app first (WAL), decrypt with `age -d -i amexlens-backup.key -o data/amexlens.sqlite <file>.age`, remove any stale `data/amexlens.sqlite-wal` / `-shm`, `chmod 600` the file, start the app. Never overwrite a live DB.
 
 **After the token migration (existing installs):** backups taken before WP3 are plaintext and contain access tokens. Run `npm run backup -- --purge-plaintext` to delete `data/backups/*.sqlite`, destroy any copies elsewhere, then `npm run verify:no-plaintext` to confirm no Plaid token prefix remains under `data/`.

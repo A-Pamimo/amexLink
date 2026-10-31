@@ -21,14 +21,19 @@ describe("assertBootConfig (WP2 auth refusals)", () => {
     expect(run).toThrow(/APP_ORIGIN/);
   });
 
-  it("refuses an http:// APP_ORIGIN in production", async () => {
-    const run = await boot({ NODE_ENV: "production", AUTH_MODE: "required", APP_ORIGIN: "http://cards.example" });
+  it("refuses AUTH_MODE=none with live Plaid credentials (PLAID_ENV=production), whatever NODE_ENV", async () => {
+    const run = await boot({ PLAID_ENV: "production", AUTH_MODE: "none" });
+    expect(run).toThrow(/AUTH_MODE=none is refused in production/);
+  });
+
+  it("refuses an http:// APP_ORIGIN when PLAID_ENV=production (SECURITY.md 3.1)", async () => {
+    const run = await boot({ PLAID_ENV: "production", AUTH_MODE: "required", APP_ORIGIN: "http://cards.example" });
     expect(run).toThrow(/https:\/\//);
   });
 
-  it("refuses COOKIE_INSECURE_DEV=1 in production", async () => {
+  it("refuses COOKIE_INSECURE_DEV=1 when PLAID_ENV=production", async () => {
     const run = await boot({
-      NODE_ENV: "production",
+      PLAID_ENV: "production",
       AUTH_MODE: "required",
       APP_ORIGIN: "https://cards.example",
       COOKIE_INSECURE_DEV: "1",
@@ -36,9 +41,23 @@ describe("assertBootConfig (WP2 auth refusals)", () => {
     expect(run).toThrow(/COOKIE_INSECURE_DEV/);
   });
 
-  it("accepts a production config with https origin, and dev with http", async () => {
-    const prod = await boot({ NODE_ENV: "production", AUTH_MODE: "required", APP_ORIGIN: "https://cards.example" });
-    expect(prod).not.toThrow();
+  it("accepts live Plaid with an https origin, and sandbox over http even in a production Node build", async () => {
+    const live = await boot({
+      NODE_ENV: "production",
+      PLAID_ENV: "production",
+      AUTH_MODE: "required",
+      APP_ORIGIN: "https://cards.example",
+    });
+    expect(live).not.toThrow();
+    // A production build on a LAN/Tailscale host with sandbox keys: http is allowed, auth is still required.
+    const lanProdBuild = await boot({
+      NODE_ENV: "production",
+      PLAID_ENV: "sandbox",
+      AUTH_MODE: "required",
+      APP_ORIGIN: "http://100.64.0.2:3000",
+      COOKIE_INSECURE_DEV: "1",
+    });
+    expect(lanProdBuild).not.toThrow();
     const dev = await boot({ AUTH_MODE: "required", APP_ORIGIN: "http://localhost:3000", COOKIE_INSECURE_DEV: "1" });
     expect(dev).not.toThrow();
     const none = await boot({ AUTH_MODE: "none" });
