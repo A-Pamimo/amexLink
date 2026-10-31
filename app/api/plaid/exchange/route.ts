@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
+import { rotateSessionOnResponse } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
 import { apiError, extractProviderError, handleProviderError } from "@/lib/http/errors";
 import { logEvent } from "@/lib/http/log-shim";
@@ -26,6 +28,9 @@ async function discardToken(access_token: string, item_id: string): Promise<void
 }
 
 export async function POST(req: Request) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
+
   const limited = rateLimited("exchange", 10, HOUR_MS);
   if (limited) return limited;
 
@@ -106,10 +111,13 @@ export async function POST(req: Request) {
     sync = { ok: false, code: err instanceof SyncError ? err.code : "sync_failed" };
   }
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     ok: true,
     item_id,
     institution_name: item.institution_name,
     sync,
   });
+  // Linking a card is a sensitive action: rotate the session token (SECURITY.md 3.3).
+  await rotateSessionOnResponse(auth, res);
+  return res;
 }
