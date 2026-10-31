@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { formatCurrency } from "@/lib/format";
+import { currencyCaption, formatCurrency } from "@/lib/format";
 import {
   ALL_BUCKETS,
   BUCKET_COLORS,
@@ -23,30 +23,34 @@ import {
 
 interface TrendResponse {
   months: number;
-  trend: MonthlyTrendPoint[];
+  currencies: string[];
+  byCurrency: Record<string, MonthlyTrendPoint[]>;
 }
 
 export function MonthlyTrend({
   months = 6,
   itemId,
   includeNonSpending,
+  currency,
 }: {
   months?: number;
   itemId?: string;
   includeNonSpending?: boolean;
+  currency?: string;
 }) {
   const itemQs = itemId ? `&item_id=${itemId}` : "";
   const incQs = includeNonSpending ? `&include_non_spending=1` : "";
   const { data, isLoading } = useSWR<TrendResponse>(
-    `/api/stats/trend?months=${months}${itemQs}${incQs}`
+    currency ? `/api/stats/trend?months=${months}${itemQs}${incQs}&currency=${currency}` : null
   );
+  const cur = currency ?? null;
 
   const buckets: BucketKey[] = includeNonSpending
     ? ALL_BUCKETS
     : ALL_BUCKETS.filter((b) => !NON_SPENDING_BUCKETS.includes(b));
 
   const chartData: Array<{ month: string } & BucketTotals> =
-    data?.trend.map((p) => ({
+    (currency ? data?.byCurrency[currency] : undefined)?.map((p) => ({
       month: p.month,
       ...p.byBucket,
     })) ?? [];
@@ -56,6 +60,7 @@ export function MonthlyTrend({
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-slate-200">
           Monthly trend — last {months} months
+          {currencyCaption(currency) ? ` (${currencyCaption(currency)})` : currency ? ` (${currency})` : ""}
         </h3>
       </div>
       <div className="h-72">
@@ -77,7 +82,7 @@ export function MonthlyTrend({
               <YAxis
                 stroke="#94a3b8"
                 fontSize={12}
-                tickFormatter={(v) => formatCurrency(v).replace(/\.\d+/, "")}
+                tickFormatter={(v) => formatCurrency(v, cur).replace(/\.\d+/, "")}
               />
               <Tooltip
                 contentStyle={{
@@ -87,7 +92,7 @@ export function MonthlyTrend({
                   color: "#e2e8f0",
                 }}
                 formatter={(value: number, name) => [
-                  formatCurrency(value),
+                  formatCurrency(value, cur),
                   BUCKET_LABELS[name as BucketKey] ?? name,
                 ]}
               />

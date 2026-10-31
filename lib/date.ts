@@ -1,70 +1,39 @@
-import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
+import { torontoToday } from "./cards/urgency";
 
-export function monthKey(d: Date): string {
-  return format(d, "yyyy-MM");
+export { torontoToday };
+
+/** Month key (YYYY-MM) of the America/Toronto civil date at `d`. `d` is injectable for tests. */
+export function torontoMonthKey(d: Date = new Date()): string {
+  return torontoToday(d).slice(0, 7);
 }
 
-export function isoDate(d: Date): string {
-  return format(d, "yyyy-MM-dd");
+/** Shift a YYYY-MM key by `n` months (negative = earlier). Pure integer arithmetic, no time zone involved. */
+export function shiftMonthKey(key: string, n: number): string {
+  const [y, m] = key.split("-").map(Number);
+  const idx = y * 12 + (m - 1) + n;
+  return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, "0")}`;
 }
 
-export function lastNMonths(n: number): string[] {
-  const now = new Date();
+/** The last `n` month keys ending at Toronto's current month, oldest first. */
+export function torontoMonthWindow(n: number, now: Date = new Date()): string[] {
+  const current = torontoMonthKey(now);
   const out: string[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    out.push(monthKey(subMonths(now, i)));
-  }
+  for (let i = n - 1; i >= 0; i--) out.push(shiftMonthKey(current, -i));
   return out;
 }
 
-export interface RangePreset {
-  id: string;
-  label: string;
-  from: string;
-  to: string;
+function monthRange(key: string): { from: string; to: string } {
+  const [y, m] = key.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from: `${key}-01`, to: `${key}-${String(lastDay).padStart(2, "0")}` };
 }
 
-export function rangePresets(now: Date = new Date()): RangePreset[] {
-  const tm = startOfMonth(now);
-  const lm = startOfMonth(subMonths(now, 1));
-  return [
-    {
-      id: "this-month",
-      label: "This month",
-      from: isoDate(tm),
-      to: isoDate(endOfMonth(now)),
-    },
-    {
-      id: "last-month",
-      label: "Last month",
-      from: isoDate(lm),
-      to: isoDate(endOfMonth(lm)),
-    },
-    {
-      id: "30d",
-      label: "Last 30 days",
-      from: isoDate(subMonths(now, 1)),
-      to: isoDate(now),
-    },
-    {
-      id: "90d",
-      label: "Last 90 days",
-      from: isoDate(subMonths(now, 3)),
-      to: isoDate(now),
-    },
-    {
-      id: "ytd",
-      label: "Year to date",
-      from: isoDate(new Date(now.getFullYear(), 0, 1)),
-      to: isoDate(now),
-    },
-  ];
+/** Whole current month in Toronto (first to last civil day). */
+export function defaultRange(now: Date = new Date()): { from: string; to: string } {
+  return monthRange(torontoMonthKey(now));
 }
 
-export function defaultRange(): { from: string; to: string } {
-  const now = new Date();
-  return {
-    from: isoDate(startOfMonth(now)),
-    to: isoDate(endOfMonth(now)),
-  };
+/** Whole previous month in Toronto. */
+export function lastMonthRange(now: Date = new Date()): { from: string; to: string } {
+  return monthRange(shiftMonthKey(torontoMonthKey(now), -1));
 }
