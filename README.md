@@ -1,8 +1,8 @@
 # AmexLens
 
-A self-hosted personal-finance dashboard for Plaid-linked cards (Amex or otherwise). Connect a card, sync transactions, see them auto-categorized into spending buckets, override categories where the auto-rules miss, and watch a monthly stacked trend.
+A self-hosted, single-owner overview of ALL your credit cards, built on Plaid. The home screen shows each card's balance, statement balance, limit, utilization, minimum payment, due date, last payment, APRs and overdue flag, sorted by what is due soonest, with totals per currency. Every field comes from the aggregation API or is shown as missing with the reason; there is no manual entry. The spending dashboard (auto-categorized transactions, manual category overrides, monthly stacked trend) lives at `/spending`.
 
-Next.js 15 (App Router, React 19) + Tailwind + SQLite (or libsql / Postgres) + Plaid + Recharts + SWR.
+Next.js 15 (App Router, React 19) + Tailwind + SQLite + Plaid + Recharts + SWR. Sign-in is a passkey or an authenticator-app code with recovery codes; Plaid tokens are encrypted at rest. Start with `HANDOVER.md` for the project state, `docs/SECURITY.md` for the security bar and `docs/ARCHITECTURE.md` for the design.
 
 ## Quick start
 
@@ -10,43 +10,48 @@ Next.js 15 (App Router, React 19) + Tailwind + SQLite (or libsql / Postgres) + P
 git clone <repo>
 cd amexLink
 nvm use                           # Node 22 (see .nvmrc; engines >=22.12 <23)
-cp .env.example .env.local        # fill in PLAID_CLIENT_ID / PLAID_SECRET
-npm install
-npm run dev                       # http://127.0.0.1:3000 (bound to loopback only)
+cp .env.example .env.local        # fill in PLAID_CLIENT_ID / PLAID_SECRET (sandbox keys)
+npm run key:generate              # prints TOKEN_ENCRYPTION_KEY=...; paste it over the empty line in .env.local (required to start)
+# edit .env.local: APP_ORIGIN=http://localhost:3000, AUTH_SETUP_TOKEN=<32+ random chars, e.g. openssl rand -base64 32>
+npm ci
+npm run dev                       # http://localhost:3000 (the server binds 127.0.0.1 only)
 ```
 
-Open `/settings` → **Connect a card** → in Plaid sandbox use:
+Open the exact `APP_ORIGIN` in the browser (a different host name fails the CSRF origin check), then:
 
-- username: `user_good`
-- password: `pass_good`
-- MFA (if prompted): `1234`
+1. **`/login` first-run setup.** Paste `AUTH_SETUP_TOKEN`, scan the TOTP QR code with an authenticator app, enter one code, and save the 10 recovery codes (shown once). Optionally add a passkey (it needs a hostname origin such as `localhost`, not a bare IP address). Details in [Authentication](#authentication).
+2. **Connect a card.** `/settings` → **Connect a card**. In Plaid sandbox use username `user_good`, password `pass_good`, MFA (if prompted) `1234`.
+3. `/` is the cards overview; `/spending` is the spending dashboard, populated by the sandbox's ~50 to 200 transactions.
 
-Sandbox seeds ~50–200 transactions; the dashboard, donut, and trend chart populate immediately.
+For a throwaway sandbox you can skip setup with `AUTH_MODE=none`; the server refuses it in production.
 
 ## Environment variables
 
-All live in `.env.local` (gitignored). `.env.example` documents the full surface.
+All live in `.env.local` (gitignored). `.env.example` documents the full surface; the last three rows are read by the scripts, not by `lib/env.ts`. `PLAID_ENV` also picks the Plaid API host in the CSP `connect-src` (see [Security headers](#security-headers)).
 
 | var | required | values | notes |
 |---|---|---|---|
 | `PLAID_CLIENT_ID` | yes | string | from the Plaid dashboard |
 | `PLAID_SECRET` | yes | string | scoped per env (sandbox/development/production) |
 | `PLAID_ENV` | no | `sandbox` \| `development` \| `production` | default `sandbox` |
-| `PLAID_COUNTRY_CODES` | no | comma list | default `US,CA` |
+| `PLAID_COUNTRY_CODES` | no | comma list | default `CA` (this owner is in Canada); set `US,CA` explicitly for a US-issued card |
 | `STORAGE` | no | `sqlite` \| `libsql` \| `postgres` | default `sqlite` |
 | `DB_PATH` | no | path | sqlite only; default `data/amexlens.sqlite` |
 | `DATABASE_URL` | conditional | URL | required for `libsql` / `postgres` |
 | `AUTH_MODE` | no | `required` \| `none` | default `required`; `none` is refused in production (see [Authentication](#authentication)) |
 | `APP_ORIGIN` | yes when `required` | origin URL | exact browser origin, e.g. `http://localhost:3000`; must be `https://` in production |
 | `AUTH_SETUP_TOKEN` | first run | ≥ 32 chars | consulted only while no sign-in factor is enrolled |
-| `COOKIE_INSECURE_DEV` | no | `0` \| `1` | `1` drops `__Host-`/`Secure` for plain-http LAN testing; refused in production |
+| `COOKIE_INSECURE_DEV` | no | `0` \| `1` | `1` drops `__Host-`/`Secure` (cookie `amexlens_session`) for plain-http LAN testing; refused when `PLAID_ENV=production` |
 | `TOKEN_ENCRYPTION_KEY` | yes (at server start) | base64 of 32 bytes | AES-256-GCM data key; see [Encryption key](#encryption-key) |
 | `TOKEN_ENCRYPTION_KEY_FILE` | alternative | path | `0600` file holding the base64 key or 32 raw bytes, outside `data/` |
 | `BACKUP_AGE_RECIPIENT` | for `npm run backup` | `age1...` public key | backups are encrypted to it; see [Backups and restore drill](#backups-and-restore-drill) |
 | `AGE_IDENTITY_FILE` | for `npm run restore:check` only | path | age identity (private key). Only on the machine running the restore drill, never on the server |
 | `PLAID_REDIRECT_URI` | for OAuth institutions | absolute http(s) URL | exact OAuth redirect URI registered in the Plaid dashboard, e.g. `http://localhost:3000/plaid/oauth`; no query/fragment, `https://` in production; see [OAuth redirect](#oauth-redirect-us-issuers) |
 | `CRON_SECRET` | no | string, >= 32 chars | bearer secret for `npm run sync` (see [Cron](#cron)); the server refuses to start if it is set but shorter |
-| `ENABLE_HSTS` | no | `0` \| `1` | default `0`; set `1` only behind HTTPS |
+| `ENABLE_HSTS` | no | `0` \| `1` | default `0`; set `1` only behind HTTPS. Read at runtime by middleware (not baked in at build) |
+| `BACKUP_DIR` | no | path | scripts only (`npm run backup`); default `<dir of DB_PATH>/backups` |
+| `BACKUP_KEEP` | no | integer | scripts only; newest N `.age` backups kept, default `7` |
+| `BASE_URL` | no | URL | scripts only (`npm run sync`); default `http://127.0.0.1:3000`, must be loopback unless `--allow-remote` |
 
 Validation runs at server startup (`lib/env.ts`). Missing or invalid values throw a clear error before anything tries to talk to Plaid or the DB.
 
@@ -54,7 +59,7 @@ Validation runs at server startup (`lib/env.ts`). Missing or invalid values thro
 
 Aggregator access tokens are stored encrypted (AES-256-GCM, `lib/crypto.ts`) under one 32-byte data key.
 
-- **Generate:** `npm run key:generate` prints a `TOKEN_ENCRYPTION_KEY=...` line (the reminder goes to stderr, so `npm run key:generate >> .env.local` appends only the key).
+- **Generate:** `npm run key:generate` prints a `TOKEN_ENCRYPTION_KEY=...` line (the reminder goes to stderr, so `>> .env.local` appends only the key; if you append, delete the empty `TOKEN_ENCRYPTION_KEY=` line copied from `.env.example` so there is no duplicate).
 - **Store:** in a password manager, and in `.env.local` (mode `0600`) or a `0600` file referenced by `TOKEN_ENCRYPTION_KEY_FILE`. Never in `data/`, never in backups, never in git. The key must not live in the same copy as the database, or a copied `data/` folder is a token leak.
 - **Without it:** the server refuses to start (`lib/boot.ts` → `loadDataKey()`); there is no plaintext fallback. A key that is not exactly 32 bytes is also refused. `next build` does not need the key.
 - **If you lose it:** the stored tokens cannot be decrypted. Delete the affected items and re-link every card. Ciphertext is prefixed with a key version (`v1.`) so a later rotation can decrypt with the old key and re-encrypt with the new one.
@@ -73,7 +78,9 @@ Full-disk encryption on the host is required. If the host is a VPS and SQLCipher
 
 `'strict-dynamic'` is deliberately not used. `react-plaid-link` adds `link-initialize.js` with `document.createElement('script')`, which `'strict-dynamic'` would trust, but `'strict-dynamic'` also makes browsers ignore the `cdn.plaid.com` allowlist, Plaid's script is third-party code we cannot audit for further injection, and Link cannot be exercised in a real browser in CI. The nonce plus host allowlist is enough. Revisit only after a browser-verified Link run.
 
-`Strict-Transport-Security` is sent only when `ENABLE_HSTS=1`. Enable it only when the app is served over HTTPS; browsers cache it for a year.
+`upgrade-insecure-requests` is part of the policy only when `APP_ORIGIN` is `https://` (on a plain-http LAN/Tailscale origin browsers would otherwise rewrite every asset URL to https and nothing would load).
+
+`Strict-Transport-Security` is set by `middleware.ts` **at runtime** on every response when `ENABLE_HSTS=1`, so a flag set only on the deploy host works (it is not evaluated at build time). Enable it only when the app is served over HTTPS; browsers cache it for a year. The one remaining build-time input is `next.config.mjs` `headers()`: the static, nonce-less CSP on `/api/*` takes its `connect-src` Plaid host from the `PLAID_ENV` of the build. API responses are JSON, so this has no effect; the page CSP is computed per request from the runtime `PLAID_ENV`.
 
 In `next dev` the policy also allows `'unsafe-eval'` and localhost websockets for HMR (development only).
 
@@ -82,7 +89,7 @@ In `next dev` the policy also allows `'unsafe-eval'` and localhost websockets fo
 You can pick the storage backend per deploy:
 
 - **`sqlite`** (default) — `better-sqlite3` against a local file. Fast, zero ops, perfect for localhost / homelab / a small VPS. Native module, so it does **not** run on Vercel serverless.
-- **`libsql`** — Turso / libsql remote. Vercel-compatible. Driver slot exists in `lib/db.ts`; add `@libsql/client` and implement `lib/db/libsql.ts` against the same `DB` interface as `lib/db/sqlite.ts`.
+- **`libsql`** — Turso / libsql remote. Vercel-compatible. Driver slot exists in `lib/db.ts`; add `@libsql/client` and implement `lib/db/libsql.ts` against the same `DB` interface that `lib/db/sqlite/` implements (not built).
 - **`postgres`** — same story, slot is wired but the driver isn't installed by default.
 
 The `DB` interface in `lib/db.ts` is the single source of truth — every API route and helper goes through it, so swapping drivers is mechanical.
@@ -99,6 +106,8 @@ There is no password. The owner signs in with a **passkey** (WebAuthn, user veri
 4. Optionally add a passkey. More passkeys and new recovery codes can be added later under **Settings → Sign-in and sessions**.
 
 The setup token is consulted **only while zero factors are enrolled**; afterwards it is dead, and every enrolment needs a signed-in session. Rotate or delete it once set up.
+
+**Passkeys need a hostname.** WebAuthn refuses an IP-address relying-party ID, so with `APP_ORIGIN=http://127.0.0.1:3000` or a bare LAN/Tailscale IP only TOTP and recovery codes work. Use `localhost`, a MagicDNS name or the proxy's host name.
 
 **Sessions and cookies**
 
@@ -257,7 +266,7 @@ Settings has a *Privacy and data* panel (what is pulled, that Plaid Inc. process
 
 1. Every item is revoked at Plaid first, one after another, with the same revoke-then-delete path as disconnecting a single card.
 2. If any revoke fails the response is `502 { error: { code: "revoke_incomplete" }, results: [{ item_id, ok, code? }] }` and nothing else is deleted. Items that did revoke are already gone, as with a normal disconnect; the failed ones stay (`revoke_failed`) so you can fix the cause and run it again.
-3. If all revokes succeed (or there were no items), one transaction deletes `transactions`, `account_fields`, `accounts`, `plaid_items` and every `settings` key except `webauthn_user_id` and `plaid_client_user_id`, then the database is `VACUUM`ed and the session cookie is rotated.
+3. If all revokes succeed (or there were no items), one transaction deletes `transactions`, `account_fields`, `accounts`, `plaid_items` and every `settings` key except `plaid_client_user_id` (the WebAuthn user handle lives in `auth_state`, which is kept), then the database is `VACUUM`ed and the session cookie is rotated.
 
 The `security_log` table is **kept** and gets a `data_delete_all` row (counts only). Plaid retains data under its own policy; this app does not claim Plaid deleted its copy. Sign-in factors (TOTP, passkeys, recovery codes) are not touched, and backups already written under `data/backups/` are not deleted.
 
@@ -290,14 +299,15 @@ app/
   transactions/page.tsx            filterable table + override
   settings/page.tsx                items, sync, system status, privacy panel, delete-all-local-data
   login/page.tsx                   first-run setup (TOTP, recovery codes, passkey) and sign-in
+  plaid/oauth/page.tsx             Plaid OAuth return page (resumes Link; exempt from the login redirect)
   api/
-    plaid/{link-token,exchange,sync}/route.ts
+    plaid/{link-token,exchange,sync,consent,repair}/route.ts
     data/route.ts                  DELETE: revoke every item, then wipe local card data
     cards/route.ts                 GET overview; cards/[id]/refresh/route.ts POST live balance
     items/[id]/route.ts            disconnect a card
     items/route.ts                 list cards
     transactions/{[id],}/route.ts  list / patch / reset bucket
-    stats/{totals,trend}/route.ts  aggregations
+    stats/{totals,trend,currencies}/route.ts  per-currency aggregations
     auth/status                    which factors exist (public, no secrets)
     auth/setup/{totp/start,totp/confirm,passkey/options,passkey/verify,recovery}
     auth/login/{totp,passkey/options,passkey/verify,recovery}
@@ -323,19 +333,26 @@ lib/
   crypto.ts                        AES-256-GCM data key core
   boot.ts                          startup config checks (called from instrumentation.ts)
   client/api.ts                    browser fetch wrapper (apiFetch, ApiError)
-  plaid.ts                         PlaidApi factory
+  plaid.ts                         PlaidApi factory, least-privilege Link scopes (assertLeastPrivilege)
+  plaid-user.ts                    per-install random client_user_id
+  providers/{types,plaid,plaid-fields,index}.ts   CardProvider, Plaid adapter, explicit field pickers, registry
+  cards/{merge,urgency,refresh,view}.ts           merge on read, Toronto-date urgency, refresh after sync, API view
+  security-headers.mjs             header set + CSP builder (nonce, upgrade-insecure-requests)
   transactions.ts                  /transactions/sync loop (per-item lock, cursor CAS, SyncError)
   sync/{lock,authorize}.ts         per-item mutex; /api/plaid/sync authz (CRON_SECRET bearer OR session + CSRF)
   items/revoke.ts                  revoke-then-delete
-  http/{errors,params,rate-limit}.ts            safe error bodies, query parsing, in-process rate limits
+  http/{body,errors,params,rate-limit}.ts       64 KiB body cap, safe error bodies, query parsing, in-process rate limits
   date.ts, format.ts, id.ts        small helpers
-middleware.ts                      cookie-shape gate (redirect / 401); handlers do the real check
+middleware.ts                      nonce CSP, HSTS (runtime), cookie-shape gate (redirect / 401); handlers do the real check
 scripts/sync.mjs                   cron-friendly sync trigger (CRON_SECRET bearer)
+scripts/key-generate.mjs           prints a fresh TOKEN_ENCRYPTION_KEY line
+scripts/verify-sandbox.mjs         sandbox-only field-presence check + coverage CSV lookup
 scripts/backup.mjs                 consistent snapshot -> age-encrypted data/backups/*.sqlite.age
 scripts/restore-check.mjs          decrypts a backup to a temp file and opens it read-only (restore drill)
 scripts/verify-no-plaintext.mjs    scans data/ for plaintext Plaid token prefixes
 scripts/log.mjs                    JSON-line logger for the scripts (mirror of lib/log.ts)
-test/                              vitest suites, helpers (loadApp, plaid-fake) and fixtures
+test/                              vitest suites, helpers (loadApp, plaid-fake) and fixtures; test/e2e = attacker suite
+docs/                              SECURITY.md (bar + checklist), RED-TEAM.md, ARCHITECTURE.md, data-providers.md
 instrumentation.ts                 runs assertBootConfig() when the server starts
 ```
 
@@ -347,15 +364,16 @@ instrumentation.ts                 runs assertBootConfig() when the server start
 | `npm run build` / `npm start` | production build + start (`start` also binds `127.0.0.1`) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint flat config (`eslint.config.mjs`, `eslint-config-next`) |
-| `npm test` / `npm run test:watch` | vitest (node env, temp SQLite file per test; see `test/helpers/`) |
-| `npm run sync` | hits `/api/plaid/sync` on the running server with `Authorization: Bearer $CRON_SECRET` (see [Cron](#cron)); loads `.env.local` via `--env-file-if-exists`. A browser session also works; the old `AUTH_PASSWORD` path is gone |
+| `npm test` / `npm run test:watch` | vitest unit and integration suites (node env, temp SQLite file per test; see `test/helpers/`) |
+| `npm run test:e2e` | attacker suite (`test/e2e`, `vitest.e2e.config.ts`): builds once, starts `next start` on `127.0.0.1:3131` with a temp DB, attacks it over HTTP and in Chromium (needs `npx playwright install chromium`); `E2E_SKIP_BUILD=1` reuses `.next`. See `docs/RED-TEAM.md` |
+| `npm run sync` | hits `/api/plaid/sync` on the running server with `Authorization: Bearer $CRON_SECRET` (see [Cron](#cron)); loads `.env.local` via `--env-file-if-exists`. A browser session (with the CSRF header) also works; there is no password login |
 | `npm run backup` | consistent snapshot of the DB, age-encrypted to `BACKUP_AGE_RECIPIENT`, written to `data/backups/amexlens-<timestamp>.sqlite.age` (mode `0600`, newest 7 kept); `-- --purge-plaintext` also deletes legacy `*.sqlite` backups; refuses to run without a recipient; loads `.env.local` |
 | `npm run restore:check -- <file.age>` | restore drill: decrypts with `AGE_IDENTITY_FILE` to a temp file, opens read-only, prints migration ids + item count, deletes the temp |
 | `npm run verify:no-plaintext [-- <dir>]` | exits 1 (listing file names) if any file under `data/` contains `access-sandbox-`/`access-development-`/`access-production-` |
 | `npm run verify:sandbox [-- --balance --with-liabilities --coverage ins_...]` | sandbox-only field-presence check against Plaid (see [Sandbox verifier](#sandbox-verifier)); refuses unless `PLAID_ENV=sandbox`; loads `.env.local` |
 | `npm run key:generate` | prints a fresh `TOKEN_ENCRYPTION_KEY=<base64 32 bytes>` line (see [Encryption key](#encryption-key)) |
 
-CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, `npm audit --audit-level=high` and build on every PR.
+CI (`.github/workflows/ci.yml`) runs typecheck, lint, `npm test`, `npm audit --audit-level=high` and build on every PR, plus an `e2e` job that runs `npm run test:e2e`. `.github/workflows/security-scans.yml` (Semgrep, Trivy, gitleaks) is non-blocking. Run `npm test` and `npm run test:e2e` before pushing.
 
 ## Backups and restore drill
 
@@ -387,24 +405,47 @@ chmod 600 amexlens-backup.key
 
 A full local smoke test:
 
-1. `cp .env.example .env.local`, fill sandbox creds, `APP_ORIGIN=http://localhost:3000`, a 32+ char `AUTH_SETUP_TOKEN`, and `npm run key:generate >> .env.local`. Open `/login` and complete the setup flow (or set `AUTH_MODE=none` for a throwaway sandbox).
-2. `npm install && npm run dev`.
+1. `cp .env.example .env.local`, fill sandbox creds, `APP_ORIGIN=http://localhost:3000`, a 32+ char `AUTH_SETUP_TOKEN`, and the `TOKEN_ENCRYPTION_KEY` line from `npm run key:generate`. Open `/login` and complete the setup flow (or set `AUTH_MODE=none` for a throwaway sandbox).
+2. `npm ci && npm run dev`.
 3. `/settings` → Connect → sandbox login (`user_good` / `pass_good`).
-4. `sqlite3 data/amexlens.sqlite '.tables'` shows `_migrations`, `plaid_items`, `transactions`. `SELECT COUNT(*) FROM transactions;` is non-zero.
-5. `/` shows the donut + 6-month trend; `/transactions` populates.
+4. `sqlite3 data/amexlens.sqlite '.tables'` shows `_migrations`, `plaid_items`, `transactions`, `accounts`, `account_fields`, `sessions`, `security_log` and the auth tables. `SELECT COUNT(*) FROM transactions;` is non-zero.
+5. `/` shows a tile per credit card (values or labelled gaps); `/spending` shows the donut + 6-month trend; `/transactions` populates.
 6. Override a row's bucket → refresh → override sticks. Click **Sync all** on `/settings` → override still sticks (validates the `bucket_override` guard).
 7. Click **reset** on the overridden row → it returns to the categorizer's choice.
 8. Link a second sandbox item → the **All cards** filter chip appears in the nav; selecting one scopes the dashboard.
 9. `curl http://localhost:3000/api/stats/totals?from=2026-04-01&to=2026-04-30` returns `{ from, to, currencies, byCurrency: { CAD: { byBucket, grandTotal }, ... } }`.
 10. `curl -i http://127.0.0.1:3000/api/items` → `401` JSON; `curl -i http://127.0.0.1:3000/transactions` → `307` to `/login?from=%2Ftransactions`; `curl -H 'Cookie: amexlens_auth=ok' http://127.0.0.1:3000/api/items` → `401`; `/api/health` still answers.
 
+## Deployment
+
+The checklist below is the deployment half of `docs/SECURITY.md` 3.9. The repository enforces the loopback bind, the file modes, the boot refusals and the headers; everything else here is host configuration you must do and that the code cannot check.
+
+- **Run a production build bound to loopback.** `NODE_ENV=production`, `npm run build && npm start` (`next start -H 127.0.0.1`). Never `next dev` on a reachable interface. A reverse proxy (Caddy or nginx) on the same host terminates TLS and forwards to `127.0.0.1:3000`; redirect HTTP to HTTPS there. Behind the proxy, `APP_ORIGIN` is the public `https://` origin and the app's login redirect is built on it.
+- **TLS and HSTS.** Terminate TLS at the proxy and turn HSTS on once TLS works, either at the proxy or with `ENABLE_HSTS=1` (read at runtime). With `PLAID_ENV=production` the server refuses an `http://` `APP_ORIGIN` or redirect URI and `COOKIE_INSECURE_DEV=1`.
+- **Tailscale or a private bind is the recommended exposure.** Pull-only sync needs no public endpoint. If the host is internet-reachable, add a per-IP throttle at the proxy for `/api/auth/login/*` (the app's lockout is a single global counter by design, so five bad codes from anywhere lock sign-in for 15 minutes) and drop requests that carry `x-middleware-subrequest` (the handlers do not rely on it). A Tailscale/LAN IP origin cannot use passkeys; use a MagicDNS or proxy host name.
+- **Dedicated unprivileged OS user**, a `0600` env file (or systemd `LoadCredential`) for `.env.local` and the key file, and systemd hardening: `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=strict`, `ReadWritePaths=` limited to the `data/` directory and logs, `UMask=0077`. Keep the install directory not writable by the app user except `data/` and logs. Keep NTP running.
+- **Full-disk encryption (LUKS, FileVault) is required.** Transactions and liability values are plaintext in the SQLite file; only tokens and the TOTP secret are column-encrypted. A hypervisor snapshot of a running VPS disk therefore exposes transaction and liability text unless SQLCipher is added (not built).
+- **Keep `TOKEN_ENCRYPTION_KEY` out of `data/`, out of backups and out of any cloud-synced folder.** Do not put `data/` in Dropbox, iCloud or Syncthing.
+- **Backups off the box.** `npm run backup` from cron (alongside `npm run sync`), then copy the `.age` files off the host. The age identity (private key) never lives on the server. Run the [restore drill](#backups-and-restore-drill) once with the real identity.
+- **Separate environments.** Different Plaid secrets, env files and DB files for sandbox and production; the code cannot tell which keys it holds.
+- **After deploy**, from another host: the raw Node port is unreachable, `GET /api/transactions` without a cookie returns `401` JSON, and `curl -I` shows the headers in [Security headers](#security-headers).
+
 ## Known limitations
 
+- Nothing here has run against a real Plaid environment: all Plaid behavior is tested with fixtures. Plaid Link under the CSP and an issuer OAuth popup under `Cross-Origin-Opener-Policy: same-origin-allow-popups` still need one manual sandbox run (`docs/RED-TEAM.md` section 6).
+- Sync is pull-only (cron or the Sync buttons). No webhook is implemented, and there are no reminders (ntfy/email); the urgency banner and the `npm run sync` summary line are the only notifications.
+- Only Plaid is wired in. A card whose institution has Liabilities off (for example Desjardins, PC Financial, Simplii, Vancity Visa) shows its due date, minimum, statement balance, last payment, APR and overdue flag as "not supported"; a Yodlee adapter is a possible future fill, justified only if a card you hold needs it.
+- A refresh replaces every stored observation for the item: if `/liabilities/get` fails transiently, previously present liability values show as an error (with the reason and time) until the next successful sync. Balances and limits are kept when only the liabilities call fails.
+- Transactions, card names/masks and liability values are stored unencrypted in SQLite (tokens and the TOTP secret are encrypted). Full-disk encryption is mandatory (see Deployment).
+- Single owner only: one TOTP secret, one WebAuthn user handle, one set of recovery codes. No account recovery beyond those codes (lose them all and you reset the `auth_state`/`passkeys`/`recovery_codes` tables by hand and run setup again). A passkey cannot be removed from the UI yet (recovery codes and "sign out everywhere" exist), and an item whose token can no longer be decrypted cannot be forgotten locally without SQL.
+- The sign-in lockout and the rate limits live in process memory and reset on restart. The lockout counter is global, so it is also a remote lockout lever; throttle per IP at the proxy.
+- `security_log` has no retention (about one row per sync or refresh).
+- The Plaid client has no request timeout yet: a hung connection holds that item's sync lock until the socket dies.
+- Passkeys need a hostname origin, not an IP address.
 - A pending → posted transition (Plaid emits `removed(pending_id)` + `added(posted_id)`) drops any manual override on the pending row. v2 could rehydrate by hashing `(date, amount, merchant_name)`.
 - libsql + postgres drivers are stubbed; the interface is ready, the driver files are not.
-- Single owner only: one TOTP secret, one WebAuthn user handle, one set of recovery codes. No account recovery beyond those codes (lose them all and you reset the `auth_state`/`passkeys`/`recovery_codes` tables by hand and run setup again).
-- The sign-in lockout counter lives in process memory and resets on restart.
-- No multi-currency rollup with FX: stats are per currency and never combined (see Currencies).
+- No multi-currency rollup with FX: stats and card totals are per currency and never combined (see Currencies).
+- The full list of residual risks is `docs/SECURITY.md` section 8.
 
 ## License
 
