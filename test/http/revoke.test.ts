@@ -11,7 +11,8 @@ function auditRows(dir: string) {
   const raw = new Database(path.join(dir, "test.sqlite"), { readonly: true });
   try {
     return raw
-      .prepare("SELECT event, item_id, outcome, detail FROM security_log ORDER BY id")
+      // Ignore rows written by migrations (e.g. 0004 token_migration); only revoke events matter here.
+      .prepare("SELECT event, item_id, outcome, detail FROM security_log WHERE event = 'revoke' ORDER BY id")
       .all() as Array<{ event: string; item_id: string; outcome: string; detail: string | null }>;
   } finally {
     raw.close();
