@@ -58,6 +58,7 @@ File map:
 ## 4. What is NOT done
 
 - **WP0 (foundation) landed** on branch `wp0-foundation`: lockfile, `next@15.5.28` pinned, Node 22, vitest (`npm test`), CI, DB/client seams.
+- **WP4 (revoke, errors, health, sync hardening) landed** on branch `wp4-hardening` (stacks on WP1): revoke-then-delete (`lib/items/revoke.ts`, migration 0005 `status`/`last_error`), `{error:{code}}` bodies via `lib/http/errors.ts`, `/api/health` = `{ok}` + `/api/system`, serialized sync with cursor CAS, `CRON_SECRET` bearer (`authorizeSync` is the hook WP2 extends with the session check), rate limits, LIKE escaping; `lib/http/log-shim.ts` is temporary until WP3's `lib/log.ts`. Closes F-06/07/08/11/13/14/17/19.
 - **WP1 (crypto core) landed** on branch `wp1-crypto-core` (stacks on WP0): `lib/crypto.ts` (AES-256-GCM `v1.` ciphertext with AAD, versioned key ring, `constantTimeEqual`/`sha256Hex`/`randomToken`), `npm run key:generate`, boot refuses to start without a 32-byte `TOKEN_ENCRYPTION_KEY`. Tokens are not yet stored encrypted; that is WP3. Still open:
 - Any Phase 0 security fix beyond the above. Any liabilities/balance code. Cards overview UI. Reminders. Red-team pass. Test coverage beyond the foundation suites. Multi-user / iOS.
 
