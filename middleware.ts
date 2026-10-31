@@ -98,12 +98,17 @@ export function middleware(req: NextRequest) {
     );
   }
 
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = "";
-  url.searchParams.set("from", pathname);
-  const redirect = NextResponse.redirect(url);
+  // Redirect target is built on APP_ORIGIN, never on `req.nextUrl` (red-team RT-09): Next
+  // derives nextUrl from the server's bind hostname (it reads `localhost` behind the documented
+  // 127.0.0.1 + reverse-proxy deployment) and from X-Forwarded-Proto, so a nextUrl-based
+  // Location would send the browser to the wrong host. Next's middleware adapter rejects a
+  // relative Location, hence the absolute URL. APP_ORIGIN is mandatory whenever auth is on.
+  const base = process.env.APP_ORIGIN?.trim() || req.nextUrl.origin;
+  const target = new URL("/login", base);
+  target.searchParams.set("from", pathname);
+  const redirect = NextResponse.redirect(target);
   redirect.headers.set("Content-Security-Policy", csp);
+  redirect.headers.set("Cache-Control", "no-store");
   return finish(redirect);
 }
 
