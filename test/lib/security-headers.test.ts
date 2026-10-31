@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-// @ts-expect-error plain ESM module without type declarations
 import { buildCsp, noStore, securityHeaders } from "@/lib/security-headers.mjs";
 // @ts-expect-error plain ESM module without type declarations
 import nextConfig from "@/next.config.mjs";
@@ -22,10 +21,20 @@ describe("buildCsp", () => {
     expect(directive(buildCsp({ dev: true }), "script-src")).toContain("'unsafe-eval'");
   });
 
-  it("limits script-src to self, unsafe-inline (temporary) and cdn.plaid.com", () => {
-    expect([...directive(buildCsp(), "script-src")].sort()).toEqual(
-      ["'self'", "'unsafe-inline'", "https://cdn.plaid.com"].sort(),
-    );
+  it("limits script-src to self, the nonce and cdn.plaid.com, never unsafe-inline", () => {
+    const scriptSrc = directive(buildCsp({ nonce: "abc123==" }), "script-src");
+    expect(scriptSrc).toEqual(["'self'", "'nonce-abc123=='", "https://cdn.plaid.com"]);
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(scriptSrc).not.toContain("'strict-dynamic'");
+    // Without a nonce (static /api policy) no inline script is allowed at all.
+    expect(directive(buildCsp(), "script-src")).toEqual(["'self'", "https://cdn.plaid.com"]);
+    expect(directive(buildCsp({ dev: true, nonce: "n" }), "script-src")).not.toContain("'unsafe-inline'");
+  });
+
+  it("keeps unsafe-inline for styles and adds unsafe-eval to script-src only in dev", () => {
+    expect(directive(buildCsp({ nonce: "n" }), "style-src")).toEqual(["'self'", "'unsafe-inline'"]);
+    expect(directive(buildCsp({ nonce: "n", dev: true }), "script-src")).toContain("'unsafe-eval'");
+    expect(directive(buildCsp({ nonce: "n", dev: false }), "script-src")).not.toContain("'unsafe-eval'");
   });
 
   it("scopes connect-src to the configured Plaid environment", () => {
@@ -88,19 +97,32 @@ describe("securityHeaders", () => {
     expect(get(h, "Content-Security-Policy")).toContain("frame-ancestors 'none'");
   });
 
+  it("omits the CSP when csp is false and keeps every other header", () => {
+    const h = securityHeaders({ csp: false, hsts: true });
+    expect(get(h, "Content-Security-Policy")).toBeUndefined();
+    expect(get(h, "X-Frame-Options")).toBe("DENY");
+    expect(get(h, "Strict-Transport-Security")).toBeTruthy();
+  });
+
   it("exports Cache-Control: no-store", () => {
     expect(noStore).toEqual({ key: "Cache-Control", value: "no-store" });
   });
 });
 
 describe("next.config.mjs headers()", () => {
-  it("applies the CSP to every path and no-store to /api and HTML routes", async () => {
+  it("leaves the CSP to middleware for HTML, keeps a static one on /api, and no-store on both", async () => {
     const entries = (await nextConfig.headers()) as { source: string; headers: Header[] }[];
     const all = entries.find((e) => e.source === "/:path*");
-    expect(all && get(all.headers, "Content-Security-Policy")).toBeTruthy();
+    expect(all).toBeTruthy();
+    expect(get(all!.headers, "Content-Security-Policy")).toBeUndefined();
+    expect(get(all!.headers, "X-Frame-Options")).toBe("DENY");
     const api = entries.find((e) => e.source === "/api/:path*");
     expect(api && get(api.headers, "Cache-Control")).toBe("no-store");
+    const apiCsp = api && get(api.headers, "Content-Security-Policy");
+    expect(apiCsp).toContain("frame-ancestors 'none'");
+    expect(directive(apiCsp!, "script-src")).not.toContain("'unsafe-inline'");
     const html = entries.find((e) => e.source === "/((?!_next/static|_next/image|favicon.ico).*)");
     expect(html && get(html.headers, "Cache-Control")).toBe("no-store");
+    expect(html && get(html.headers, "Content-Security-Policy")).toBeUndefined();
   });
 });
