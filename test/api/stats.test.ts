@@ -102,12 +102,12 @@ describe("GET /api/stats/currencies", () => {
   it("lists currencies with CAD first", async () => {
     await seeded();
     const { GET } = await import("@/app/api/stats/currencies/route");
-    expect(await (await GET()).json()).toEqual({ currencies: ["CAD", "USD"] });
+    expect(await (await GET(new Request("http://localhost/api/stats/currencies"))).json()).toEqual({ currencies: ["CAD", "USD"] });
   });
 
   it("is empty with no transactions", async () => {
     await loadApp();
     const { GET } = await import("@/app/api/stats/currencies/route");
-    expect(await (await GET()).json()).toEqual({ currencies: [] });
+    expect(await (await GET(new Request("http://localhost/api/stats/currencies"))).json()).toEqual({ currencies: [] });
   });
 });
