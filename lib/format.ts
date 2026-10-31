@@ -1,16 +1,31 @@
-export function formatCurrency(
-  amount: number,
-  currency: string | null = "USD"
-): string {
+import { isUnknownCurrency } from "./currency";
+
+/**
+ * Format `amount` in `currency` (ISO 4217). The currency is required: there is no default, so a
+ * CAD amount can never be shown as USD by accident. `null` / `"UNKNOWN"` (no code from the
+ * provider) renders as a plain number; callers show a "currency unknown" caption beside it.
+ */
+export function formatCurrency(amount: number, currency: string | null): string {
+  if (isUnknownCurrency(currency)) {
+    return new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  }
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency: currency || "USD",
+      currency: currency as string,
       maximumFractionDigits: 2,
     }).format(amount);
   } catch {
-    return `${(currency || "$")} ${amount.toFixed(2)}`;
+    return `${currency} ${amount.toFixed(2)}`;
   }
+}
+
+/** Caption for amounts that have no currency code; undefined when the currency is known. */
+export function currencyCaption(currency: string | null | undefined): string | undefined {
+  return isUnknownCurrency(currency) ? "currency unknown" : undefined;
 }
 
 // Plaid sign convention: positive = outflow. For UI we want to show
