@@ -9,13 +9,13 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  let body: any;
+  let body: { bucket?: BucketKey } | null;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  const bucket = body?.bucket as BucketKey | undefined;
+  const bucket = body?.bucket;
   if (!bucket || !ALL_BUCKETS.includes(bucket)) {
     return NextResponse.json({ error: "invalid bucket" }, { status: 400 });
   }

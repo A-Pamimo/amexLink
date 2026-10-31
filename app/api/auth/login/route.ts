@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   if (env.AUTH_MODE !== "password") {
     return NextResponse.json({ error: "auth disabled" }, { status: 400 });
   }
-  let body: any;
+  let body: { password?: unknown } | null;
   try {
     body = await req.json();
   } catch {

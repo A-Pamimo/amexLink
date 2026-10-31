@@ -8,7 +8,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  let body: any;
+  let body: {
+    public_token?: string;
+    institution?: { name?: string; id?: string } | null;
+  } | null;
   try {
     body = await req.json();
   } catch {
@@ -40,9 +43,10 @@ export async function POST(req: Request) {
 
     const sync = await syncItem(item);
     return NextResponse.json({ item_id, sync });
-  } catch (err: any) {
+  } catch (err) {
+    const e = err as { response?: { data?: unknown }; message?: string };
     return NextResponse.json(
-      { error: err?.response?.data ?? err?.message ?? "exchange failed" },
+      { error: e?.response?.data ?? e?.message ?? "exchange failed" },
       { status: 500 }
     );
   }
