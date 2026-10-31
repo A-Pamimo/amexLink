@@ -1,0 +1,15 @@
+import { FlatCompat } from "@eslint/eslintrc";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// eslint-config-next 15.5 ships eslintrc-style configs, so bridge via FlatCompat.
+const compat = new FlatCompat({ baseDirectory: __dirname });
+
+const config = [
+  { ignores: [".next/**", "node_modules/**", "coverage/**", "next-env.d.ts"] },
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+];
+
+export default config;
