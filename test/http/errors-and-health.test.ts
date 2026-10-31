@@ -29,7 +29,7 @@ describe("error bodies and logs carry no provider text or tokens", () => {
     plaid.linkTokenCreate.mockRejectedValueOnce(leakyError("INVALID_FIELD"));
     await loadApp();
     const { POST } = await import("@/app/api/plaid/link-token/route");
-    const res = await POST();
+    const res = await POST(req("/api/plaid/link-token", { method: "POST" }));
     expect(res.status).toBe(502);
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ error: { code: "provider_error", provider_code: "INVALID_FIELD" } });
@@ -101,11 +101,11 @@ describe("error bodies and logs carry no provider text or tokens", () => {
   });
 });
 
-describe("log shim", () => {
+describe("lib/log via the route helpers", () => {
   it("strips sensitive keys and token-looking values", async () => {
     await loadApp();
-    const { logEvent } = await import("@/lib/http/log-shim");
-    logEvent("x", {
+    const { log } = await import("@/lib/log");
+    log.warn("x", {
       access_token: "a",
       PLAID_SECRET: "b",
       Cookie: "c",
@@ -115,6 +115,7 @@ describe("log shim", () => {
       item_id: "i1",
     });
     const out = con.text();
+    expect(out).toContain('"event":"x"');
     expect(out).toContain('"item_id":"i1"');
     expect(out).toContain("[redacted]");
     for (const leaked of [PLANTED, '"a"', '"b"', '"c"', '"d"', '"e"']) expect(out).not.toContain(leaked);
@@ -147,7 +148,7 @@ describe("health and system", () => {
     const { db } = await loadApp();
     await seedItem(db, { withTx: true });
     const { GET } = await import("@/app/api/system/route");
-    const res = await GET();
+    const res = await GET(req("/api/system"));
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.json()).toEqual({

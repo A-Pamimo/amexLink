@@ -4,7 +4,7 @@ import { refreshItemCards } from "./cards/refresh";
 import { categorizeTx } from "./categorize";
 import { getDB, type TransactionInsert } from "./db";
 import { extractProviderError, mapProviderCode } from "./http/errors";
-import { logEvent } from "./http/log-shim";
+import { log } from "./log";
 import { getPlaid } from "./plaid";
 import { withItemLock } from "./sync/lock";
 import type { ItemSyncSummary, PlaidItem, SyncAllResult, SyncResult } from "./types";
@@ -100,7 +100,7 @@ async function syncLocked(item_id: string): Promise<SyncResult> {
     if (err instanceof SyncError) throw err;
     if (isCredentialError(err)) {
       await db.setItemStatus(item_id, "needs_relink", "credential_unreadable");
-      logEvent("sync_credential_unreadable", { item_id });
+      log.error("sync_credential_unreadable", { item_id });
       throw new SyncError("credential_unavailable");
     }
     throw new SyncError("sync_failed");
@@ -118,7 +118,7 @@ async function syncLocked(item_id: string): Promise<SyncResult> {
       const info = extractProviderError(err);
       if (info.error_code === MUTATION_CODE && attempt < MAX_ATTEMPTS) {
         // Plaid asks for a restart from the cursor the loop began with.
-        logEvent("sync_pagination_restart", { item_id, attempt });
+        log.warn("sync_pagination_restart", { item_id, attempt });
         continue;
       }
       if (info.error_code && RELINK_CODES.has(info.error_code)) {
@@ -126,7 +126,7 @@ async function syncLocked(item_id: string): Promise<SyncResult> {
       } else if (info.error_code === "ADDITIONAL_CONSENT_REQUIRED") {
         await db.setItemStatus(item_id, "consent_required", info.error_code);
       }
-      logEvent("sync_failed", {
+      log.warn("sync_failed", {
         item_id,
         error_code: info.error_code,
         error_type: info.error_type,
@@ -150,7 +150,7 @@ async function syncLocked(item_id: string): Promise<SyncResult> {
     if (!stored) {
       // Someone else moved the cursor while we were paging. Pages were applied idempotently;
       // keep their cursor and let the next sync catch up.
-      logEvent("sync_cursor_conflict", { item_id });
+      log.warn("sync_cursor_conflict", { item_id });
     }
   }
 
@@ -163,13 +163,13 @@ async function syncLocked(item_id: string): Promise<SyncResult> {
   try {
     await refreshItemCards(item_id, { realtimeBalance: false });
   } catch (err) {
-    logEvent("cards_refresh_failed", {
+    log.warn("cards_refresh_failed", {
       item_id,
       error_code: extractProviderError(err).error_code,
     });
   }
 
-  logEvent("sync_finished", { item_id, ...totals });
+  log.info("sync_finished", { item_id, ...totals });
   return totals;
 }
 

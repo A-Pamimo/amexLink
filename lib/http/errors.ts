@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { logEvent } from "./log-shim";
+import { log } from "../log";
 
 /**
  * Every API error is `{ error: { code, ...extra } }`. `code` is a short stable string the
@@ -79,7 +79,7 @@ export function handleProviderError(
   ctx: { route: string; item_id?: string }
 ): NextResponse {
   const info = extractProviderError(err);
-  logEvent("provider_error", {
+  log.warn("provider_error", {
     route: ctx.route,
     item_id: ctx.item_id,
     error_code: info.error_code,
