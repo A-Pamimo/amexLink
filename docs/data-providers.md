@@ -1,6 +1,8 @@
 # Credit-card data providers
 
 > **Salvaged draft (Oct 30, 2026).** Written by a Cursor builder agent that crashed before pushing any code. Vendor facts, prices, dates and the Plaid coverage-file flags are **unverified**: re-check against each vendor's current docs before relying on them. Wherever this file says "this build", "already in the app", or names files such as `0002_card_liabilities.sql`, `lib/webhooks.ts`, or `scripts/verify-sandbox.mjs`, read it as **the design target, not existing code**. None of that code is on `main`. See `HANDOVER.md`.
+>
+> **Exception:** the Plaid `/liabilities/get` field list (see the note under the intro and the Plaid column of the field table) was verified against plaid.com/docs/api/products/liabilities on 2026-10-30. Every other vendor fact, and the Canadian institution table, remain unverified.
 
 
 Comparison for a single-user, self-hosted dashboard in Toronto. The fields that matter are the ones on the cards overview:
@@ -12,8 +14,11 @@ Comparison for a single-user, self-hosted dashboard in Toronto. The fields that 
 - minimum payment
 - next payment due date
 - last payment amount and date
-- APR (purchase, and the other APR types when the API returns them)
+- last statement issue date
+- APR (purchase, and the other APR types when the API returns them: balance transfer, cash, penalty, special)
 - overdue flag
+
+**Plaid field list: verified against plaid.com/docs/api/products/liabilities on 2026-10-30** (`/liabilities/get` `liabilities.credit[]`: `account_id`, `aprs[]` of `{ apr_percentage, apr_type, balance_subject_to_apr, interest_charge_amount }`, `is_overdue`, `last_payment_amount`, `last_payment_date`, `last_statement_issue_date`, `last_statement_balance`, `minimum_payment_amount`, `next_payment_due_date`). `apr_type` is one of `balance_transfer_apr`, `cash_apr`, `penalty_apr`, `purchase_apr`, `special`; the public docs page omits `penalty_apr` and `last_statement_issue_date`, but the `plaid` SDK (v46+) returns both. An empty `aprs` array means the issuer supplied no APR. `is_overdue: false` is a real value. Balances come from `/accounts/get` (cached, free) or `/accounts/balance/get` (live, billed per call): `current`, `available`, `limit`, `iso_currency_code`. The Yodlee, MX, Flinks and other-vendor columns, and the Canadian institution table below, are still unverified drafts.
 
 Utilization is not an issuer field. AmexLens computes it from current balance and credit limit and labels it as computed. Missing issuer fields stay missing. The app does not invent them and does not accept manual overrides.
 
@@ -37,11 +42,12 @@ Plaid's own Liabilities docs still say Canadian coverage is limited. The October
 | Statement balance | `liabilities.credit.last_statement_balance` | `amountDue` on the account; statement `amountDue` | `statement_balance` | Not published | Line-of-credit `statementCloseBalance` (US product) | Not published for CA cards | Not published | Not published |
 | Credit limit | `balances.limit` | `totalCreditLine` | `credit_limit` | `Balance.Limit` | `creditMaxAmount` | Not a CA card product | Not published | Not published |
 | Available credit | `balances.available` for credit accounts | `availableCredit` | `available_credit` | `Balance.Available` | `creditAvailableAmount` | Not a CA card product | Not published | Not published |
+| Statement issue date | `liabilities.credit.last_statement_issue_date` | Not verified | Not verified | Not published | Not verified | Not published | Not published | Not published |
 | Minimum payment | `minimum_payment_amount` | `minimumPayment` on statements; account payment fields | `minimum_payment` | Not published | `paymentMinAmount` | Not published | Not published | Not published |
 | Next due date | `next_payment_due_date` (full date) | `dueDate` (account and statement) | `payment_due_at` (full timestamp) and `day_payment_is_due` (day of month only) | Not published | `paymentDueDate` | Not published | Not published | Not published |
 | Last payment amount | `last_payment_amount` | `lastPaymentAmount` | `last_payment` | Not published | `lastPaymentAmount` | Not published | Not published | Not published |
 | Last payment date | `last_payment_date` | `lastPaymentDate` | `last_payment_at` | Not published | `lastPaymentDate` | Not published | Not published | Not published |
-| APR | `aprs[]` with `apr_type` (`purchase_apr`, `cash_apr`, `balance_transfer_apr`, `special`) | Account `apr`; optional derived APR; statement `apr` | `apr` from the feed, plus `calculated_apr` | Not published | `interestRate` on the line-of-credit detail | Not published | Not published | Not published |
+| APR | `aprs[]` with `apr_type` (`purchase_apr`, `cash_apr`, `balance_transfer_apr`, `penalty_apr`, `special`) | Account `apr`; optional derived APR; statement `apr` | `apr` from the feed, plus `calculated_apr` | Not published | `interestRate` on the line-of-credit detail | Not published | Not published | Not published |
 | Overdue | `is_overdue` | Not a single boolean in the fields cited; past-due is not the same object | Not a dedicated boolean in the account object cited | Not published | `pastDueAmount` | Not published | Not published | Not published |
 
 MX can store a value as feed, user, or system (`*_set_by`). AmexLens will not write user-entered values. A future MX adapter would ignore anything not set by the feed.
@@ -111,6 +117,12 @@ Least privilege. The Link token requests only what the overview and the existing
 - Update mode for an item that was linked before Liabilities existed: Link token with `access_token` and `additional_consented_products: ["liabilities"]`, and no `products` array. That is the documented way to add consent under Data Transparency Messaging. The access token does not change.
 - Country codes stay `US,CA` (`PLAID_COUNTRY_CODES`).
 - `redirect_uri` is sent only when `PLAID_REDIRECT_URI` is set.
+
+### Balance policy
+
+- **Sync and cron use the cached balance.** After each `/transactions/sync` the app calls `/accounts/get` (free, cached) for `current`, `available` and `limit`, plus `/liabilities/get`, and records `balance_source: "cached"`.
+- **The billed call is explicit.** `/accounts/balance/get` (billed per successful call; Plaid limits it to 5 per minute and 30 per hour per Item) is made only by `POST /api/cards/{id}/refresh`, which is limited to one call per card per 10 minutes. If the live call fails, the adapter falls back to the cached call and reports `balance_source: "cached"`; if both fail it reports `"error"` and leaves stored cards untouched.
+- Only `type: "credit"` accounts are kept. Account numbers, routing numbers and owner details are never requested as products and are dropped if a payload contains them.
 
 Calling `/liabilities/get` on an item with no credit account fails and is not billed, per Plaid's personal-finance guidance. The adapter records the error code and leaves liability fields unsupported or not supplied. Transaction sync still commits.
 
