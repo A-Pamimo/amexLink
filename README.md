@@ -66,11 +66,15 @@ Full-disk encryption on the host is required. If the host is a VPS and SQLCipher
 
 ## Security headers
 
-`next.config.mjs` applies the headers from `docs/SECURITY.md` 3.10 to every response (built in `lib/security-headers.mjs`): a Content-Security-Policy limited to this origin plus Plaid Link (`cdn.plaid.com`) and the Plaid API host for the configured `PLAID_ENV`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, a locked-down `Permissions-Policy`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (issuer OAuth popups), and `Cross-Origin-Resource-Policy: same-origin`. `Cache-Control: no-store` is set on `/api/*` and HTML routes. `Cross-Origin-Embedder-Policy` is never set because it breaks Plaid Link.
+`next.config.mjs` applies the headers from `docs/SECURITY.md` 3.10 to every response (built in `lib/security-headers.mjs`): `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, a locked-down `Permissions-Policy`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (issuer OAuth popups), and `Cross-Origin-Resource-Policy: same-origin`. `Cache-Control: no-store` is set on `/api/*` and HTML routes. `Cross-Origin-Embedder-Policy` is never set because it breaks Plaid Link.
+
+**Content-Security-Policy and the script nonce.** `middleware.ts` generates a fresh 128-bit nonce per request and sets `Content-Security-Policy` (from `buildCsp` in `lib/security-headers.mjs`) on every page response, including `/login`, `/plaid/oauth` and the redirect to `/login`. `script-src` is `'self' 'nonce-<nonce>' https://cdn.plaid.com`; the policy is also forwarded as a request header (plus `x-nonce`) so Next.js stamps the nonce on its own inline scripts. That only works for pages rendered per request, so `app/layout.tsx` calls `await connection()` to make every page dynamic. `/api/*` serves JSON and keeps a static, nonce-less CSP from `next.config.mjs`. `connect-src`, `frame-src` and the rest are limited to this origin, Plaid Link (`cdn.plaid.com`) and the Plaid API host for the configured `PLAID_ENV`. `style-src` keeps `'unsafe-inline'` (Tailwind/Radix/sonner emit inline style attributes).
+
+`'strict-dynamic'` is deliberately not used. `react-plaid-link` adds `link-initialize.js` with `document.createElement('script')`, which `'strict-dynamic'` would trust, but `'strict-dynamic'` also makes browsers ignore the `cdn.plaid.com` allowlist, Plaid's script is third-party code we cannot audit for further injection, and Link cannot be exercised in a real browser in CI. The nonce plus host allowlist is enough. Revisit only after a browser-verified Link run.
 
 `Strict-Transport-Security` is sent only when `ENABLE_HSTS=1`. Enable it only when the app is served over HTTPS; browsers cache it for a year.
 
-Known deviation: `script-src` still includes `'unsafe-inline'` because Next.js emits inline bootstrap scripts and there is no per-request nonce yet. A follow-up (WP5b) adds a middleware nonce and removes it. In `next dev` the policy also allows `'unsafe-eval'` and localhost websockets for HMR.
+In `next dev` the policy also allows `'unsafe-eval'` and localhost websockets for HMR (development only).
 
 ## Storage modes
 
