@@ -7,11 +7,12 @@ export const dynamic = "force-dynamic";
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const db = await getDB();
   const items = await db.listItems();
-  const target = items.find((i) => i.id === params.id);
+  const target = items.find((i) => i.id === id);
   if (!target) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
