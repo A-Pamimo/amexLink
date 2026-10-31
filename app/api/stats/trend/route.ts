@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const auth = await requireSession(req);
+  if (!auth.ok) return auth.response;
   const url = new URL(req.url);
   const sp = url.searchParams;
   const months = Math.max(1, Math.min(24, parseInt(sp.get("months") ?? "6", 10) || 6));

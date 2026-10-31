@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
+import { rotateSessionOnResponse } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
 import { newId } from "@/lib/id";
 import { getPlaid } from "@/lib/plaid";
@@ -8,6 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
   let body: {
     public_token?: string;
     institution?: { name?: string; id?: string } | null;
@@ -42,7 +46,10 @@ export async function POST(req: Request) {
     });
 
     const sync = await syncItem(item);
-    return NextResponse.json({ item_id, sync });
+    const res = NextResponse.json({ item_id, sync });
+    // Linking a card is a sensitive action: rotate the session token (SECURITY.md 3.3).
+    await rotateSessionOnResponse(auth, res);
+    return res;
   } catch (err) {
     const e = err as { response?: { data?: unknown }; message?: string };
     return NextResponse.json(

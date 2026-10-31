@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
 import { getPlaid, plaidCountryCodes, TRANSACTIONS_PRODUCT } from "@/lib/plaid";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
   const plaid = getPlaid();
   try {
     const res = await plaid.linkTokenCreate({

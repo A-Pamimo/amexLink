@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
+import { rotateSessionOnResponse } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
 import { getPlaid } from "@/lib/plaid";
 
@@ -6,9 +8,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
   const { id } = await params;
   const db = await getDB();
   const target = await db.getItemById(id);
@@ -24,5 +28,8 @@ export async function DELETE(
     // Best-effort: continue removing locally even if Plaid call fails.
   }
   await db.deleteItem(target.id);
-  return NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true });
+  // Disconnect is a sensitive action: rotate the session token (SECURITY.md 3.3).
+  await rotateSessionOnResponse(auth, res);
+  return res;
 }

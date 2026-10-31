@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
 import { defaultRange } from "@/lib/date";
 
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const auth = await requireSession(req);
+  if (!auth.ok) return auth.response;
   const url = new URL(req.url);
   const sp = url.searchParams;
   const def = defaultRange();
