@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "../log";
 import { apiError } from "./errors";
 
 /**
@@ -45,6 +46,8 @@ export function rateLimit(
 export function rateLimited(scope: string, limit: number, windowMs: number): Response | null {
   const r = rateLimit(scope, limit, windowMs);
   if (r.ok) return null;
+  // SECURITY.md 3.6: rate-limit trips are a security event. Scope only; no caller data.
+  log.info("rate_limited", { scope, retry_after_s: r.retryAfterSec });
   return apiError(429, "rate_limited", undefined, {
     headers: { "Retry-After": String(r.retryAfterSec) },
   });

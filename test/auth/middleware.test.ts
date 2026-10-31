@@ -40,15 +40,33 @@ describe("middleware", () => {
   it("/transactions without a cookie → 307 to /login?from=/transactions", () => {
     const res = middleware(req("/transactions"));
     expect(res.status).toBe(307);
-    const loc = new URL(res.headers.get("location")!);
+    const loc = new URL(res.headers.get("location")!, BASE);
     expect(loc.origin).toBe(BASE);
     expect(loc.pathname).toBe("/login");
     expect(loc.searchParams.get("from")).toBe("/transactions");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("builds the redirect on APP_ORIGIN, not on the bind hostname or forwarded headers (RT-09)", () => {
+    const saved = process.env.APP_ORIGIN;
+    process.env.APP_ORIGIN = "https://cards.example";
+    try {
+      const res = middleware(
+        new NextRequest("http://localhost:3000/transactions", {
+          headers: { host: "evil.example", "x-forwarded-host": "evil.example", "x-forwarded-proto": "ftp" },
+        })
+      );
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toBe("https://cards.example/login?from=%2Ftransactions");
+    } finally {
+      if (saved === undefined) delete process.env.APP_ORIGIN;
+      else process.env.APP_ORIGIN = saved;
+    }
   });
 
   it("drops the original query string from `from`", () => {
     const res = middleware(req("/settings?tab=x"));
-    const loc = new URL(res.headers.get("location")!);
+    const loc = new URL(res.headers.get("location")!, BASE);
     expect(loc.searchParams.get("from")).toBe("/settings");
     expect([...loc.searchParams.keys()]).toEqual(["from"]);
   });

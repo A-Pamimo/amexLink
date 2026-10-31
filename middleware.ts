@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { looksLikeSessionToken, sessionCookieName } from "@/lib/auth/cookie";
 import { authMode, cookieInsecureDev } from "@/lib/auth/mode";
-import { buildCsp } from "@/lib/security-headers.mjs";
+import { buildCsp, HSTS_VALUE, isPlainHttpOrigin } from "@/lib/security-headers.mjs";
 
 /**
  * Per-request CSP nonce (SECURITY.md 3.10, F-09). Every non-API response gets
@@ -42,22 +42,33 @@ function makeNonce(): string {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const nonce = makeNonce();
+  const dev = process.env.NODE_ENV !== "production";
   const csp = buildCsp({
     nonce,
-    dev: process.env.NODE_ENV !== "production",
+    dev,
     plaidEnv: process.env.PLAID_ENV ?? "sandbox",
+    // No upgrade-insecure-requests on a plain-http APP_ORIGIN (LAN / COOKIE_INSECURE_DEV=1):
+    // the browser would rewrite every same-origin asset to https:// and nothing would load.
+    upgrade: !dev && !isPlainHttpOrigin(process.env.APP_ORIGIN),
   });
   const isApi = pathname.startsWith("/api/");
+  // HSTS is decided at runtime here (not in next.config.mjs, whose headers() is evaluated at
+  // build time and would silently ignore an ENABLE_HSTS set only on the deploy host).
+  const hsts = process.env.ENABLE_HSTS === "1";
+  const finish = <T extends Response>(res: T): T => {
+    if (hsts) res.headers.set("Strict-Transport-Security", HSTS_VALUE);
+    return res;
+  };
 
   /** Pass the request on; pages get the nonce and CSP. */
   const next = () => {
-    if (isApi) return NextResponse.next();
+    if (isApi) return finish(NextResponse.next());
     const headers = new Headers(req.headers);
     headers.set("x-nonce", nonce);
     headers.set("content-security-policy", csp);
     const res = NextResponse.next({ request: { headers } });
     res.headers.set("Content-Security-Policy", csp);
-    return res;
+    return finish(res);
   };
 
   if (authMode() === "none") return next();
@@ -79,19 +90,26 @@ export function middleware(req: NextRequest) {
   if (looksLikeSessionToken(value)) return next();
 
   if (pathname.startsWith("/api/")) {
-    return new NextResponse(JSON.stringify({ error: { code: "unauthenticated" } }), {
-      status: 401,
-      headers: { "content-type": "application/json", "cache-control": "no-store" },
-    });
+    return finish(
+      new NextResponse(JSON.stringify({ error: { code: "unauthenticated" } }), {
+        status: 401,
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      })
+    );
   }
 
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = "";
-  url.searchParams.set("from", pathname);
-  const redirect = NextResponse.redirect(url);
+  // Redirect target is built on APP_ORIGIN, never on `req.nextUrl` (red-team RT-09): Next
+  // derives nextUrl from the server's bind hostname (it reads `localhost` behind the documented
+  // 127.0.0.1 + reverse-proxy deployment) and from X-Forwarded-Proto, so a nextUrl-based
+  // Location would send the browser to the wrong host. Next's middleware adapter rejects a
+  // relative Location, hence the absolute URL. APP_ORIGIN is mandatory whenever auth is on.
+  const base = process.env.APP_ORIGIN?.trim() || req.nextUrl.origin;
+  const target = new URL("/login", base);
+  target.searchParams.set("from", pathname);
+  const redirect = NextResponse.redirect(target);
   redirect.headers.set("Content-Security-Policy", csp);
-  return redirect;
+  redirect.headers.set("Cache-Control", "no-store");
+  return finish(redirect);
 }
 
 export const config = {

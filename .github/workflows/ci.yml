@@ -27,3 +27,18 @@ jobs:
           PLAID_CLIENT_ID: ci
           PLAID_SECRET: ci
           PLAID_ENV: sandbox
+
+  # WP9 attacker suite (docs/RED-TEAM.md): builds once, runs `next start` on 127.0.0.1:3131
+  # against a temp database with AUTH_MODE=required, and attacks it over HTTP and in Chromium.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

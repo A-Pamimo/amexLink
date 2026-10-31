@@ -19,6 +19,7 @@ export async function POST(req: Request) {
   if (locked) return locked;
 
   const body = await readJsonObject(req);
+  if (body instanceof Response) return body;
   const code = typeof body.code === "string" ? body.code : "";
 
   const db = await getDB();

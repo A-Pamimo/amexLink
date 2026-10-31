@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireMutation } from "@/lib/auth/guard";
 import { getDB } from "@/lib/db";
+import { readJsonBody } from "@/lib/http/body";
 import { ALL_BUCKETS, type BucketKey } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -12,13 +13,10 @@ export async function PATCH(
 ) {
   const auth = await requireMutation(req);
   if (!auth.ok) return auth.response;
-  let body: { bucket?: BucketKey } | null;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-  const bucket = body?.bucket;
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.value as { bucket?: BucketKey } | null | undefined;
+  const bucket = body && typeof body === "object" ? body.bucket : undefined;
   if (!bucket || !ALL_BUCKETS.includes(bucket)) {
     return NextResponse.json({ error: "invalid bucket" }, { status: 400 });
   }
