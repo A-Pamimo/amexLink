@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 /** Verify a registration response and store the credential. Signs in when it is the first factor. */
 export async function POST(req: Request) {
   const body = await readJsonObject(req);
+  if (body instanceof Response) return body;
   const gate = await authorizeSetup(req, body);
   if (!gate.ok) return gate.response;
 

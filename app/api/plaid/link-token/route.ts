@@ -4,6 +4,7 @@ import { requireMutation } from "@/lib/auth/guard";
 import { getDB } from "@/lib/db";
 import { env } from "@/lib/env";
 import { TokenUnreadableError } from "@/lib/errors";
+import { readJsonBody } from "@/lib/http/body";
 import { apiError, handleProviderError } from "@/lib/http/errors";
 import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
 import {
@@ -39,17 +40,13 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   let body: { mode?: unknown; item_id?: unknown } = {};
-  try {
-    const text = await req.text();
-    if (text.trim() !== "") {
-      const parsed: unknown = JSON.parse(text);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return apiError(400, "invalid_json");
-      }
-      body = parsed as typeof body;
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
+  if (parsed.value !== undefined) {
+    if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+      return apiError(400, "invalid_json");
     }
-  } catch {
-    return apiError(400, "invalid_json");
+    body = parsed.value as typeof body;
   }
 
   const mode: Mode = body.mode === undefined ? "new" : (body.mode as Mode);
