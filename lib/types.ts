@@ -1,3 +1,5 @@
+import type { LiabilitiesStatus } from "./providers/types";
+
 export type BucketKey =
   | "food"
   | "groceries"
@@ -79,6 +81,8 @@ export interface PlaidItem {
   cursor: string | null;
   status: ItemStatus;
   last_error: string | null;
+  /** Last Liabilities outcome of a card refresh (null until the first refresh). */
+  liabilities_status: LiabilitiesStatus | null;
 }
 
 export interface Transaction {

@@ -97,6 +97,31 @@ function optionalMinLength(name: string, min: number): string | null {
 
 // WP3: data key
 
+// WP6b: link
+// Exact URL registered in the Plaid dashboard for OAuth institutions (e.g.
+// http://localhost:3000/plaid/oauth). Sent as `redirect_uri` on Link tokens only when set.
+const PLAID_REDIRECT_URI = parseRedirectUri("PLAID_REDIRECT_URI");
+
+function parseRedirectUri(name: string): string | null {
+  const v = process.env[name];
+  if (!v || v.trim() === "") return null;
+  const raw = v.trim();
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`${name} must be an absolute http(s) URL, e.g. http://localhost:3000/plaid/oauth`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${name} must use http or https`);
+  }
+  if (url.search || url.hash || raw.includes("?") || raw.includes("#")) {
+    throw new Error(`${name} must not contain a query string or fragment`);
+  }
+  // Plaid compares the string byte-for-byte, so keep exactly what the owner registered.
+  return raw;
+}
+
 // WP4: cron
 // Optional bearer secret for headless /api/plaid/sync (scripts/sync.mjs). When set it must be
 // high-entropy (>= 32 chars), e.g. `openssl rand -base64 32`.
@@ -132,6 +157,9 @@ export const env = Object.freeze({
 
   // WP4: cron
   CRON_SECRET,
+
+  // WP6b: link
+  PLAID_REDIRECT_URI,
 });
 
 export type Env = typeof env;

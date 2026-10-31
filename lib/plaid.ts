@@ -50,6 +50,9 @@ export const LINK_ACCOUNT_FILTERS: LinkTokenAccountFilters = {
   credit: { account_subtypes: [CreditAccountSubtype.CreditCard] },
 };
 
+/** Update mode that adds Liabilities consent to an existing Item (no `products` array). */
+export const LINK_ADDITIONAL_CONSENTED: Products[] = [Products.Liabilities];
+
 const ALLOWED_PRODUCTS = new Set<string>([Products.Transactions, Products.Liabilities]);
 
 export interface LinkScopes {
