@@ -5,7 +5,7 @@ import { closeApp, loadApp } from "../helpers/app";
 import { captureConsole } from "../helpers/console";
 import { makeCard, ob, present } from "../helpers/cards";
 import { installPlaidFake, plaidError } from "../helpers/plaid-fake";
-import { seedItem } from "../helpers/seed";
+import { req, seedItem } from "../helpers/seed";
 
 let con: ReturnType<typeof captureConsole>;
 beforeEach(() => {
@@ -39,7 +39,7 @@ describe("GET /api/cards", () => {
     ]);
 
     const { GET } = await import("@/app/api/cards/route");
-    const res = await GET();
+    const res = await GET(req("/api/cards"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as CardsResponse;
 
@@ -66,7 +66,7 @@ describe("GET /api/cards", () => {
       makeCard("x", { iso_currency_code: null }, { current_balance: ob("error", null, { error_code: "X" }), statement_balance: ob("not_supported"), credit_limit: ob("not_supplied") }),
     ]);
     const { GET } = await import("@/app/api/cards/route");
-    const body = (await (await GET()).json()) as CardsResponse;
+    const body = (await (await GET(req("/api/cards"))).json()) as CardsResponse;
     expect(body.totals_by_currency).toEqual({
       UNKNOWN: { balance: null, statement_due: null, utilization: { ratio: null, included: 0, excluded: 1 } },
     });
@@ -85,7 +85,7 @@ describe("GET /api/cards", () => {
       makeCard("past", { mask: "0005" }, { next_payment_due_date: present(addDays(today, -2)), is_overdue: present(false) }),
     ]);
     const { GET } = await import("@/app/api/cards/route");
-    const body = (await (await GET()).json()) as CardsResponse;
+    const body = (await (await GET(req("/api/cards"))).json()) as CardsResponse;
     expect(body.cards.map((c) => c.mask)).toEqual(["0004", "0003", "0002", "0005", "0001"]);
     expect(body.cards.map((c) => c.urgency)).toEqual(["overdue", "due_soon", "scheduled", "past_not_overdue", "unknown"]);
     expect(body.cards.map((c) => c.days_until_due)).toEqual([10, 3, 30, -2, null]);
@@ -102,7 +102,7 @@ describe("GET /api/cards", () => {
     await refreshItemCards(item.item_id);
 
     const { GET } = await import("@/app/api/cards/route");
-    const text = await (await GET()).text();
+    const text = await (await GET(req("/api/cards"))).text();
     const body = JSON.parse(text) as CardsResponse;
     const amex = body.cards.find((c) => c.mask === "1005");
     expect(amex?.fields.current_balance).toMatchObject({ status: "present", provider: "plaid" });
@@ -121,7 +121,7 @@ describe("GET /api/cards", () => {
   it("returns an empty overview when nothing is linked", async () => {
     await loadApp();
     const { GET } = await import("@/app/api/cards/route");
-    const body = (await (await GET()).json()) as CardsResponse;
+    const body = (await (await GET(req("/api/cards"))).json()) as CardsResponse;
     expect(body).toMatchObject({ cards: [], totals_by_currency: {}, counts: { overdue: 0, due_soon: 0 } });
   });
 });

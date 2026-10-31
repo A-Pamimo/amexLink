@@ -16,7 +16,7 @@ describe("GET /api/items", () => {
     await db.updateItemSync("plaid-item-1", "cursor-abc", "2026-10-31T00:00:00.000Z");
 
     const { GET } = await import("@/app/api/items/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/items"));
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).not.toContain("access_token");

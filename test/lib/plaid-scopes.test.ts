@@ -2,6 +2,7 @@ import { CreditAccountSubtype, Products } from "plaid";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeApp, loadApp } from "../helpers/app";
 import { installPlaidFake } from "../helpers/plaid-fake";
+import { req } from "../helpers/seed";
 
 beforeEach(() => vi.resetModules());
 afterEach(() => closeApp());
@@ -58,8 +59,8 @@ describe("POST /api/plaid/link-token request shape", () => {
     resetRateLimits();
     const { POST } = await import("@/app/api/plaid/link-token/route");
 
-    expect((await POST()).status).toBe(200);
-    expect((await POST()).status).toBe(200);
+    expect((await POST(req("/api/plaid/link-token", { method: "POST" }))).status).toBe(200);
+    expect((await POST(req("/api/plaid/link-token", { method: "POST" }))).status).toBe(200);
     expect(plaid.linkTokenCreate).toHaveBeenCalledTimes(2);
 
     const [a, b] = plaid.linkTokenCreate.mock.calls.map((c) => c[0] as Record<string, unknown> & { user: { client_user_id: string } });

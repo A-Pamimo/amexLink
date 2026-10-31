@@ -80,7 +80,9 @@ describe("backup / restore drill scripts", () => {
 
     const restore = run("restore-check.mjs", [agePath], { AGE_IDENTITY_FILE: identityFile });
     expect(restore.status, restore.stderr).toBe(0);
-    expect(restore.stdout).toContain("migrations=1,2,4");
+    const ids = /migrations=([\d,]+)/.exec(restore.stdout)?.[1]?.split(",").map(Number) ?? [];
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    expect(ids).toEqual(expect.arrayContaining([1, 2, 3, 4, 5, 6]));
     expect(restore.stdout).toContain("items=1");
     expect(restore.stdout + restore.stderr).not.toContain("access-sandbox-");
     // restore-check leaves no decrypted copy in the temp dir.
