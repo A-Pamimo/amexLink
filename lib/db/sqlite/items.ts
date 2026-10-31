@@ -3,11 +3,12 @@ import { decrypt, DecryptError, encrypt } from "../../crypto";
 import type { ItemLifecycleRepo, ItemsRepo, PlaidItemInsert } from "../../db";
 import { TokenUnreadableError } from "../../errors";
 import { log } from "../../log";
+import type { LiabilitiesStatus } from "../../providers/types";
 import type { ItemStatus, PlaidItem } from "../../types";
 
 // Never `SELECT *` here: the token ciphertext must only leave SQL through getItemSecret.
 const ITEM_COLUMNS =
-  "id, item_id, institution_name, institution_id, created_at, last_synced_at, cursor, status, last_error";
+  "id, item_id, institution_name, institution_id, created_at, last_synced_at, cursor, status, last_error, liabilities_status";
 
 /** AAD binds the ciphertext to its row; moving it to another item fails to decrypt. */
 function tokenAad(item_id: string): string {
@@ -24,6 +25,7 @@ interface ItemRow {
   cursor: string | null;
   status: string;
   last_error: string | null;
+  liabilities_status: string | null;
 }
 
 function rowToItem(row: ItemRow): PlaidItem {
@@ -37,6 +39,7 @@ function rowToItem(row: ItemRow): PlaidItem {
     cursor: row.cursor ?? null,
     status: (row.status ?? "active") as ItemStatus,
     last_error: row.last_error ?? null,
+    liabilities_status: (row.liabilities_status ?? null) as LiabilitiesStatus | null,
   };
 }
 
@@ -121,6 +124,7 @@ export function itemsRepo(db: Database.Database): ItemsRepo {
         cursor: null,
         status: "active",
         last_error: null,
+        liabilities_status: null,
       });
     },
     async updateItemSync(item_id, cursor, last_synced_at) {
