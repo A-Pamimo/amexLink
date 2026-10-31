@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDB } from "@/lib/db";
+import { CURRENCY_PARAM } from "@/lib/currency";
 import { intParam, strParam } from "@/lib/http/params";
 
 export const runtime = "nodejs";
@@ -11,8 +12,17 @@ export async function GET(req: Request) {
   const months = intParam(sp, "months", { def: 6, min: 1, max: 24 });
   const item_id = strParam(sp, "item_id", { max: 128 });
   const include_non_spending = sp.get("include_non_spending") === "1";
+  const currency = strParam(sp, "currency", { max: 16 });
+  if (currency !== undefined && !CURRENCY_PARAM.test(currency)) {
+    return NextResponse.json({ error: "invalid currency" }, { status: 400 });
+  }
 
   const db = await getDB();
-  const trend = await db.monthlyTrend(months, item_id, include_non_spending);
-  return NextResponse.json({ months, trend });
+  const { byCurrency, currencies } = await db.monthlyTrend(
+    months,
+    item_id,
+    include_non_spending,
+    currency
+  );
+  return NextResponse.json({ months, currencies, byCurrency });
 }

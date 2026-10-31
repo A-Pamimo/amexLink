@@ -11,9 +11,9 @@ import type {
 } from "./providers/types";
 import type {
   BucketKey,
-  BucketTotals,
+  BucketTotalsByCurrency,
   ItemStatus,
-  MonthlyTrendPoint,
+  MonthlyTrendByCurrency,
   PlaidItem,
   Transaction,
   TransactionFilters,
@@ -116,8 +116,22 @@ export interface TransactionsRepo {
 }
 
 export interface StatsRepo {
-  bucketTotals(range: StatsRange): Promise<BucketTotals>;
-  monthlyTrend(months: number, item_id?: string, include_non_spending?: boolean): Promise<MonthlyTrendPoint[]>;
+  /** Totals per bucket, grouped by `COALESCE(iso_currency_code, 'UNKNOWN')`. */
+  bucketTotals(range: StatsRange): Promise<BucketTotalsByCurrency>;
+  /**
+   * Monthly series per currency. The month window ends at the current America/Toronto month
+   * (`now` is injectable); each transaction is bucketed by its own civil `date`.
+   * With `currency`, only that series is returned (zero-filled when it has no rows).
+   */
+  monthlyTrend(
+    months: number,
+    item_id?: string,
+    include_non_spending?: boolean,
+    currency?: string,
+    now?: Date
+  ): Promise<MonthlyTrendByCurrency>;
+  /** Distinct currencies across stored transactions (`UNKNOWN` for missing codes): CAD first. */
+  listCurrencies(): Promise<string[]>;
 }
 
 export interface CoreRepo {
