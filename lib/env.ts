@@ -135,7 +135,8 @@ export const env = Object.freeze({
   PLAID_CLIENT_ID: requireEnv("PLAID_CLIENT_ID"),
   PLAID_SECRET: requireEnv("PLAID_SECRET"),
   PLAID_ENV,
-  PLAID_COUNTRY_CODES: optional("PLAID_COUNTRY_CODES", "US,CA")
+  // Default CA only (SECURITY.md 3.5 / F-16): this owner is in Canada. Set US,CA explicitly for a US card.
+  PLAID_COUNTRY_CODES: optional("PLAID_COUNTRY_CODES", "CA")
     .split(",")
     .map((c) => c.trim())
     .filter(Boolean),

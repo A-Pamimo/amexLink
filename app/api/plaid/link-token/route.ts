@@ -6,6 +6,7 @@ import { env } from "@/lib/env";
 import { TokenUnreadableError } from "@/lib/errors";
 import { readJsonBody } from "@/lib/http/body";
 import { apiError, handleProviderError } from "@/lib/http/errors";
+import { log } from "@/lib/log";
 import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
 import {
   assertLeastPrivilege,
@@ -102,6 +103,8 @@ export async function POST(req: Request) {
 
   try {
     const res = await getPlaid().linkTokenCreate(request);
+    // SECURITY.md 3.6: "link started" at info. Mode and item id only; never the token.
+    log.info("link_token_created", { mode, item_id: itemId });
     return NextResponse.json({
       link_token: res.data.link_token,
       expiration: res.data.expiration,

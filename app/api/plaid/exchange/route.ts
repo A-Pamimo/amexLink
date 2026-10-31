@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { audit } from "@/lib/audit";
 import { requireMutation } from "@/lib/auth/guard";
 import { rotateSessionOnResponse } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
@@ -78,6 +79,8 @@ export async function POST(req: Request) {
     log.error("exchange_store_failed", { item_id });
     return apiError(500, "storage_error");
   }
+  // SECURITY.md 3.6 / C-R1: "exchange succeeded (item id only)" in the append-only log.
+  await audit("link.exchange", { item_id, outcome: "ok" });
 
   // Institution metadata from Plaid, not the browser. Non-fatal: the card is already stored.
   try {
