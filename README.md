@@ -44,6 +44,7 @@ All live in `.env.local` (gitignored). `.env.example` documents the full surface
 | `TOKEN_ENCRYPTION_KEY_FILE` | alternative | path | `0600` file holding the base64 key or 32 raw bytes, outside `data/` |
 | `BACKUP_AGE_RECIPIENT` | for `npm run backup` | `age1...` public key | backups are encrypted to it; see [Backups and restore drill](#backups-and-restore-drill) |
 | `AGE_IDENTITY_FILE` | for `npm run restore:check` only | path | age identity (private key). Only on the machine running the restore drill, never on the server |
+| `PLAID_REDIRECT_URI` | for OAuth institutions | absolute http(s) URL | exact OAuth redirect URI registered in the Plaid dashboard, e.g. `http://localhost:3000/plaid/oauth`; no query/fragment, `https://` in production; see [OAuth redirect](#oauth-redirect-us-issuers) |
 | `CRON_SECRET` | no | string, >= 32 chars | bearer secret for `npm run sync` (see [Cron](#cron)); the server refuses to start if it is set but shorter |
 | `ENABLE_HSTS` | no | `0` \| `1` | default `0`; set `1` only behind HTTPS |
 
@@ -114,7 +115,7 @@ The setup token is consulted **only while zero factors are enrolled**; afterward
 
 ## Plaid sync flow
 
-1. `POST /api/plaid/link-token` → server creates a Link token (`products: [transactions]`, `required_if_supported_products: [liabilities]`, credit-card account filter, per-install random `client_user_id`, country codes from env). Nothing beyond Transactions and Liabilities is ever requested; boot fails if that list widens.
+1. `POST /api/plaid/link-token` → server creates a Link token (see [Link token modes](#link-token-modes) for update mode) (`products: [transactions]`, `required_if_supported_products: [liabilities]`, credit-card account filter, per-install random `client_user_id`, country codes from env). Nothing beyond Transactions and Liabilities is ever requested; boot fails if that list widens.
 2. Client opens Plaid Link via `usePlaidLink`. On success, posts only the `public_token` to `POST /api/plaid/exchange` (rate limited, 10/h; link-token is also 10/h).
 3. Server exchanges for an `access_token`, **stores the item immediately** (a duplicate `item_id` revokes the new token and returns 409 `already_linked`), takes institution id/name from Plaid (`itemGet` + `institutionsGetById`, never from the browser), then triggers an initial sync. A failed first sync does not fail the link: the response is HTTP 200 with `sync: { ok: false, code }`.
 4. `POST /api/plaid/sync[?item_id=...]` runs `/transactions/sync` in a `has_more` loop:
@@ -127,6 +128,48 @@ The setup token is consulted **only while zero factors are enrolled**; afterward
    - `ITEM_LOGIN_REQUIRED` marks the item `needs_relink`; "Sync all" continues past a failing card and reports each card's result.
 
 Manual sync lives on `/settings` (per-card and "Sync all"), limited to 6/hour per card.
+
+### Link token modes
+
+`POST /api/plaid/link-token` takes `{ "mode"?: "new" | "consent" | "repair", "item_id"?: string }` (default `new`) and answers `{ link_token, expiration, mode }` only. It needs a session plus the `X-AmexLens-Request` header like every mutation, and is limited to 10/hour.
+
+| mode | Plaid request | finish step in the browser |
+|---|---|---|
+| `new` | `products: [transactions]`, `required_if_supported_products: [liabilities]`, `account_filters: { credit: { account_subtypes: ["credit card"] } }` | `POST /api/plaid/exchange { public_token }` |
+| `consent` | `access_token` (loaded server-side from `item_id`) + `additional_consented_products: [liabilities]`, **no** `products` array | `POST /api/plaid/consent { item_id }` |
+| `repair` | `access_token` alone (the fix for `ITEM_LOGIN_REQUIRED`) | `POST /api/plaid/repair { item_id }` |
+
+All modes send `user.client_user_id` (the per-install random id), `client_name`, `language` and `country_codes`, plus `redirect_uri` only when `PLAID_REDIRECT_URI` is set. `webhook` is never sent. An unknown `item_id` is `404 item_not_found`. The access token never leaves the server.
+
+### Granting liabilities access to an existing card
+
+A card linked before Liabilities was requested (or at an institution that asked for consent later) shows **Consent required** on `/settings`, and its row gets a **Grant liabilities access** button. It opens Link in update mode for that card (`consent` mode above). When Link finishes the browser calls `POST /api/plaid/consent { item_id }`, which re-reads liabilities once from the free cached endpoints (never the billed balance call), moves the card from `consent_required` to `active` if Plaid now answers, and returns `{ ok, liabilities_status, item_status }`. Limited to 6/hour per card. Re-linking cannot create data an institution does not provide: a `not_supported` result stays `not_supported`.
+
+A card whose login expired shows **Needs re-link** and a **Reconnect** button (`repair` mode). Its finish step, `POST /api/plaid/repair { item_id }`, clears the flag and runs one sync; the response is `{ ok, sync: { ok, error_code? } }` and a sync that still fails flags the card again. The access token does not change in either update flow, so nothing is exchanged and no Item slot is used.
+
+### OAuth redirect (US issuers)
+
+Many US institutions (American Express US, most US banks) authenticate with OAuth: Link sends the browser to the bank and the bank sends it back to a URL you registered. Whether a given Canadian institution does this is not assumed; see [Canadian institutions](docs/data-providers.md#canadian-institutions).
+
+1. Register the exact URL in the Plaid dashboard (Developers > API > Allowed redirect URIs), e.g. `http://localhost:3000/plaid/oauth` for sandbox. Production must be `https://`. Plaid compares the string exactly: no query, no fragment, same scheme/host/port/path.
+2. Put the same string in `.env.local` as `PLAID_REDIRECT_URI`. It is validated at startup (absolute http(s) URL, no query or fragment; `https://` required when `PLAID_ENV=production`) and sent as `redirect_uri` on every Link token. Leave it empty and OAuth institutions will fail to link, other institutions are unaffected.
+3. Right before it opens Link, the app stores `{ token, mode, item_id, created_at }` in `sessionStorage["amexlens_plaid_link"]`; the record is cleared on success or exit. After the bank redirect, `/plaid/oauth` reads it (a record missing or older than 30 minutes shows "Link session expired. Start again from Settings."), re-opens Link with the same token and `receivedRedirectUri`, runs the same finish step as the button, and returns to `/settings`. The link token is never put in a URL.
+
+`/plaid/oauth` is exempt from the sign-in redirect (the bank's redirect is a cross-site navigation) but it performs no action by itself: every API call it makes needs a session and the CSRF header.
+
+### Sandbox verifier
+
+`npm run verify:sandbox` checks, against Plaid's sandbox only, which of the 11 card fields a credit account really returns. It refuses to run unless `PLAID_ENV=sandbox`, reads `PLAID_CLIENT_ID`/`PLAID_SECRET` (sandbox keys) from `.env.local`, uses the `plaid` SDK directly, and never touches the app database or `TOKEN_ENCRYPTION_KEY`.
+
+```bash
+npm run verify:sandbox                      # sandbox Item (ins_109508, user_good/pass_good) -> /accounts/get + /liabilities/get
+npm run verify:sandbox -- --with-liabilities   # create the Item with liabilities consent (see below)
+npm run verify:sandbox -- --balance         # also /accounts/balance/get (billed in production, free in sandbox)
+npm run verify:sandbox -- --coverage ins_100533,ins_39,ins_42
+```
+
+For each credit account it prints the mask, the currency and, per field key, `present` or `null`. It never prints a value, an Item id or a token. On a failure it prints the Plaid `error_code` (for example `ADDITIONAL_CONSENT_REQUIRED` when the Item was created without Liabilities; use `--with-liabilities`). The sandbox Item is removed with `/item/remove` in a `finally`. Exit code 1 on any failure. `--coverage` downloads Plaid's [institution coverage CSV](https://plaid.com/documents/us_institution_coverage.csv) to a temp file and prints the `liabilities`, `balance` and `transactions` flags (1 = listed) for the ids you give.
+
 
 ## Cards API, refresh and field statuses
 
@@ -177,8 +220,8 @@ npm run sync                                # loads .env.local; BASE_URL=http://
 | status | meaning | what to do |
 |---|---|---|
 | `active` | syncing normally | nothing |
-| `needs_relink` | Plaid reports the login is no longer valid (`ITEM_LOGIN_REQUIRED` / `INVALID_ACCESS_TOKEN`) | re-link the card; a later successful sync returns it to `active` |
-| `consent_required` | Plaid needs additional consent (`ADDITIONAL_CONSENT_REQUIRED`) | re-consent via Link |
+| `needs_relink` | Plaid reports the login is no longer valid (`ITEM_LOGIN_REQUIRED` / `INVALID_ACCESS_TOKEN`) | click **Reconnect** on `/settings`; a later successful sync returns it to `active` |
+| `consent_required` | Plaid needs additional consent (`ADDITIONAL_CONSENT_REQUIRED`) | click **Grant liabilities access** on `/settings` (update-mode Link) |
 | `revoke_failed` | Disconnect could not be confirmed by Plaid; the local row and token are kept | click **Retry revoke** on `/settings` |
 
 Disconnect revokes at Plaid first and deletes locally only after Plaid accepts (or says the item is already gone).
@@ -270,6 +313,7 @@ instrumentation.ts                 runs assertBootConfig() when the server start
 | `npm run backup` | consistent snapshot of the DB, age-encrypted to `BACKUP_AGE_RECIPIENT`, written to `data/backups/amexlens-<timestamp>.sqlite.age` (mode `0600`, newest 7 kept); `-- --purge-plaintext` also deletes legacy `*.sqlite` backups; refuses to run without a recipient; loads `.env.local` |
 | `npm run restore:check -- <file.age>` | restore drill: decrypts with `AGE_IDENTITY_FILE` to a temp file, opens read-only, prints migration ids + item count, deletes the temp |
 | `npm run verify:no-plaintext [-- <dir>]` | exits 1 (listing file names) if any file under `data/` contains `access-sandbox-`/`access-development-`/`access-production-` |
+| `npm run verify:sandbox [-- --balance --with-liabilities --coverage ins_...]` | sandbox-only field-presence check against Plaid (see [Sandbox verifier](#sandbox-verifier)); refuses unless `PLAID_ENV=sandbox`; loads `.env.local` |
 | `npm run key:generate` | prints a fresh `TOKEN_ENCRYPTION_KEY=<base64 32 bytes>` line (see [Encryption key](#encryption-key)) |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, `npm audit --audit-level=high` and build on every PR.
