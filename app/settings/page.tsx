@@ -2,6 +2,7 @@
 import useSWR, { useSWRConfig } from "swr";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AuthSettings } from "@/components/AuthSettings";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { SyncButton } from "@/components/SyncButton";
 import { apiFetch, errorMessage } from "@/lib/client/api";
@@ -94,6 +95,11 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium text-slate-300">Sign-in and sessions</h2>
+        <AuthSettings />
       </section>
 
       <section className="space-y-2">
