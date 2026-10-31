@@ -20,6 +20,10 @@ import { authMode, cookieInsecureDev } from "@/lib/auth/mode";
  *   /plaid/oauth    Plaid OAuth return page; every API call it makes is gated
  *   /_next/*        framework assets
  *   /favicon.ico    static asset
+ *   POST /api/plaid/sync with an Authorization header
+ *                   the cron path: `authorizeSync` in the handler compares the bearer to
+ *                   CRON_SECRET in constant time and answers 401 on any mismatch. Without the
+ *                   header the route is cookie-gated here like every other /api route.
  */
 export function middleware(req: NextRequest) {
   if (authMode() === "none") return NextResponse.next();
@@ -32,7 +36,8 @@ export function middleware(req: NextRequest) {
     pathname === "/api/health" ||
     pathname === "/plaid/oauth" ||
     pathname.startsWith("/_next/") ||
-    pathname === "/favicon.ico"
+    pathname === "/favicon.ico" ||
+    (pathname === "/api/plaid/sync" && req.method === "POST" && req.headers.has("authorization"))
   ) {
     return NextResponse.next();
   }

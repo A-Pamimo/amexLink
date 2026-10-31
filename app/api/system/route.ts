@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
 import { env } from "@/lib/env";
 
@@ -6,8 +7,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Operator detail that used to be public on /api/health (SECURITY.md F-08 / C-I3).
-export async function GET() {
-  // WP2: requireSession
+export async function GET(req: Request) {
+  const auth = await requireSession(req);
+  if (!auth.ok) return auth.response;
   let items_count = 0;
   let tx_count = 0;
   let db_ok = false;

@@ -78,6 +78,17 @@ describe("middleware", () => {
     expect(middleware(req("/api/items", `__Host-amexlens_session=${TOKEN}`)).status).toBe(401);
   });
 
+  it("lets POST /api/plaid/sync with an Authorization header reach authorizeSync; nothing else", () => {
+    const bearer = { headers: { authorization: "Bearer whatever" } };
+    expect(passedThrough(middleware(new NextRequest(`${BASE}/api/plaid/sync`, { method: "POST", ...bearer })))).toBe(true);
+    // No header: cookie-gated like every other API route.
+    expect(middleware(new NextRequest(`${BASE}/api/plaid/sync`, { method: "POST" })).status).toBe(401);
+    // Other methods and other routes do not get the bearer pass-through.
+    expect(middleware(new NextRequest(`${BASE}/api/plaid/sync`, { method: "GET", ...bearer })).status).toBe(401);
+    expect(middleware(new NextRequest(`${BASE}/api/items`, { method: "GET", ...bearer })).status).toBe(401);
+    expect(middleware(new NextRequest(`${BASE}/api/plaid/exchange`, { method: "POST", ...bearer })).status).toBe(401);
+  });
+
   it("is a no-op under AUTH_MODE=none", () => {
     process.env.AUTH_MODE = "none";
     expect(passedThrough(middleware(req("/api/items")))).toBe(true);
