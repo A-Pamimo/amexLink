@@ -10,3 +10,6 @@ yarn-error.log*
 pnpm-debug.log*
 dist
 *.tsbuildinfo
+
+# Claude Code agent worktrees (local only)
+.claude/worktrees/
