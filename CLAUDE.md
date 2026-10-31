@@ -7,7 +7,8 @@ Rules:
 - **Never commit secrets** (Plaid keys, access tokens, `.env*` other than `.env.example`, encryption keys, DB files, backups).
 - **`docs/SECURITY.md` acceptance checklist is mandatory** for every change. Phase 0 security fixes come before any feature work.
 - **No manual data entry or overrides** for card data. All fields come from aggregation APIs; missing fields are shown as missing, with the reason.
-- `docs/ARCHITECTURE.md` and `docs/data-providers.md` are salvaged, **unverified** drafts: verify vendor facts before relying on them; code they mention does not exist yet.
+- `docs/ARCHITECTURE.md` and `docs/data-providers.md` are verified (2026-10-30); the status banner at the top of each says what is built and what is future.
 - Never log or return access tokens, provider error bodies, or full account numbers.
 - Dates/urgency use America/Toronto. Totals are per currency.
+- Run `npm test` and `npm run test:e2e` before pushing; the `docs/SECURITY.md` checklist and `docs/RED-TEAM.md` are the acceptance bar.
 - Small PRs with tests; don't touch the `claude/swift-analysis-rebuild-6Y7xV` branch unless asked.
