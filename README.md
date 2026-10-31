@@ -36,8 +36,10 @@ All live in `.env.local` (gitignored). `.env.example` documents the full surface
 | `STORAGE` | no | `sqlite` \| `libsql` \| `postgres` | default `sqlite` |
 | `DB_PATH` | no | path | sqlite only; default `data/amexlens.sqlite` |
 | `DATABASE_URL` | conditional | URL | required for `libsql` / `postgres` |
-| `AUTH_MODE` | no | `none` \| `password` \| `passkey` | default `none` |
-| `AUTH_PASSWORD` | conditional | string | required when `AUTH_MODE=password` |
+| `AUTH_MODE` | no | `required` \| `none` | default `required`; `none` is refused in production (see [Authentication](#authentication)) |
+| `APP_ORIGIN` | yes when `required` | origin URL | exact browser origin, e.g. `http://localhost:3000`; must be `https://` in production |
+| `AUTH_SETUP_TOKEN` | first run | ≥ 32 chars | consulted only while no sign-in factor is enrolled |
+| `COOKIE_INSECURE_DEV` | no | `0` \| `1` | `1` drops `__Host-`/`Secure` for plain-http LAN testing; refused in production |
 | `TOKEN_ENCRYPTION_KEY` | yes (at server start) | base64 of 32 bytes | AES-256-GCM data key; see [Encryption key](#encryption-key) |
 | `TOKEN_ENCRYPTION_KEY_FILE` | alternative | path | `0600` file holding the base64 key or 32 raw bytes, outside `data/` |
 
@@ -62,13 +64,31 @@ You can pick the storage backend per deploy:
 
 The `DB` interface in `lib/db.ts` is the single source of truth — every API route and helper goes through it, so swapping drivers is mechanical.
 
-## Auth modes
+## Authentication
 
-- **`none`** (default) — open. Fine for `localhost`.
-- **`password`** — single shared password set via `AUTH_PASSWORD`. `middleware.ts` redirects to `/login` and sets a `httpOnly` cookie on success. Use this when reaching the app over Tailscale / LAN.
-- **`passkey`** — slot reserved; not implemented yet. Add `@simplewebauthn/server` and wire up `/api/auth/*` to ship.
+There is no password. The owner signs in with a **passkey** (WebAuthn, user verification required) or a **TOTP** authenticator app, and keeps **10 single-use recovery codes** for device loss. Factors are enrolled at runtime, not chosen by env (`docs/SECURITY.md` 3.3).
 
-`/api/health` is always reachable so external monitors don't need credentials.
+**First run (setup flow)**
+
+1. Put a random `AUTH_SETUP_TOKEN` (≥ 32 chars, e.g. `openssl rand -base64 32`) and the exact `APP_ORIGIN` in `.env.local`, start the server, open `/login`.
+2. Paste the setup token → scan the TOTP QR code → enter one code. The server stores the secret encrypted (AES-256-GCM, AAD `auth_state:totp`) and marks it enrolled only after that code verifies.
+3. Save the 10 recovery codes (shown once, stored as hashes).
+4. Optionally add a passkey. More passkeys and new recovery codes can be added later under **Settings → Sign-in and sessions**.
+
+The setup token is consulted **only while zero factors are enrolled**; afterwards it is dead, and every enrolment needs a signed-in session. Rotate or delete it once set up.
+
+**Sessions and cookies**
+
+- 256-bit random token in a cookie named `__Host-amexlens_session` (`Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`). The database stores only its SHA-256.
+- Absolute lifetime 12 h, idle timeout 2 h. The token is rotated on sign-in, on linking a card and on disconnecting one.
+- **Sign out** deletes the server row, so any other copy of the cookie dies. **Sign out everywhere** deletes every row.
+- Sign-in locks for 15 minutes after 5 failures (global counter, not per IP: `X-Forwarded-For` is spoofable and there is one user). The counter is in memory and resets on restart.
+- Every state-changing request must come from `APP_ORIGIN` (`Origin`/`Referer` check) and carry the `X-AmexLens-Request: 1` header (`lib/client/api.ts` adds it). Otherwise `403 { error: { code: "csrf" } }`.
+- `middleware.ts` only redirects browsers without a token-shaped cookie to `/login` (API calls get `401` JSON). The real check is `requireSession` / `requireMutation` as the first statement of every handler, so a middleware bypass changes nothing.
+
+**`AUTH_MODE=none`** disables all of this. It exists for local sandbox work and the test suite; the server refuses to start with it in production, and also refuses `COOKIE_INSECURE_DEV=1` or an `http://` `APP_ORIGIN` in production.
+
+`/api/health` is reachable without a session so external monitors don't need credentials.
 
 ## Plaid sync flow
 
@@ -107,17 +127,22 @@ app/
   page.tsx                         dashboard
   transactions/page.tsx            filterable table + override
   settings/page.tsx                items, sync, system status
-  login/page.tsx                   used when AUTH_MODE=password
+  login/page.tsx                   first-run setup (TOTP, recovery codes, passkey) and sign-in
   api/
     plaid/{link-token,exchange,sync}/route.ts
     items/[id]/route.ts            disconnect a card
     items/route.ts                 list cards
     transactions/{[id],}/route.ts  list / patch / reset bucket
     stats/{totals,trend}/route.ts  aggregations
-    auth/{login,logout}/route.ts   password mode endpoints
+    auth/status                    which factors exist (public, no secrets)
+    auth/setup/{totp/start,totp/confirm,passkey/options,passkey/verify,recovery}
+    auth/login/{totp,passkey/options,passkey/verify,recovery}
+    auth/logout, auth/sessions     delete this session / every session
     health/route.ts                always-public status
-components/                        SWR-driven client UI
+components/                        SWR-driven client UI (AuthSettings.tsx = factors, sign out)
 lib/
+  auth/                            session.ts (requireSession, rotate), guard.ts (requireMutation, CSRF),
+                                   totp.ts, passkey.ts, recovery.ts, lockout.ts, cookie.ts, from.ts
   types.ts                         BucketKey, Transaction, etc.
   categorize.ts                    Plaid -> bucket rules
   env.ts                           validated env loader
@@ -131,7 +156,7 @@ lib/
   plaid.ts                         PlaidApi factory
   transactions.ts                  /transactions/sync loop
   date.ts, format.ts, id.ts        small helpers
-middleware.ts                      auth gate
+middleware.ts                      cookie-shape gate (redirect / 401); handlers do the real check
 scripts/sync.mjs                   cron-friendly sync trigger
 scripts/backup.mjs                 copies sqlite to data/backups/
 test/                              vitest suites, helpers (loadApp, plaid-fake) and fixtures
@@ -147,7 +172,7 @@ instrumentation.ts                 runs assertBootConfig() when the server start
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint flat config (`eslint.config.mjs`, `eslint-config-next`) |
 | `npm test` / `npm run test:watch` | vitest (node env, temp SQLite file per test; see `test/helpers/`) |
-| `npm run sync` | hits `/api/plaid/sync` on the running server (auths if `AUTH_PASSWORD` is set); loads `.env.local` via `--env-file-if-exists` |
+| `npm run sync` | hits `/api/plaid/sync` on the running server; loads `.env.local` via `--env-file-if-exists`. Needs a session or the WP4 `CRON_SECRET`; the old `AUTH_PASSWORD` path is gone |
 | `npm run backup` | copies the sqlite file to `data/backups/amexlens-<timestamp>.sqlite`; loads `.env.local` |
 | `npm run key:generate` | prints a fresh `TOKEN_ENCRYPTION_KEY=<base64 32 bytes>` line (see [Encryption key](#encryption-key)) |
 
@@ -157,7 +182,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, `npm audit --audit-l
 
 A full local smoke test:
 
-1. `cp .env.example .env.local`, fill sandbox creds, leave `STORAGE=sqlite` and `AUTH_MODE=none`.
+1. `cp .env.example .env.local`, fill sandbox creds, `APP_ORIGIN=http://localhost:3000`, a 32+ char `AUTH_SETUP_TOKEN`, and `npm run key:generate >> .env.local`. Open `/login` and complete the setup flow (or set `AUTH_MODE=none` for a throwaway sandbox).
 2. `npm install && npm run dev`.
 3. `/settings` → Connect → sandbox login (`user_good` / `pass_good`).
 4. `sqlite3 data/amexlens.sqlite '.tables'` shows `_migrations`, `plaid_items`, `transactions`. `SELECT COUNT(*) FROM transactions;` is non-zero.
@@ -166,13 +191,14 @@ A full local smoke test:
 7. Click **reset** on the overridden row → it returns to the categorizer's choice.
 8. Link a second sandbox item → the **All cards** filter chip appears in the nav; selecting one scopes the dashboard.
 9. `curl http://localhost:3000/api/stats/totals?from=2026-04-01&to=2026-04-30` returns `{ from, to, byBucket, grandTotal }`.
-10. Switch `AUTH_MODE=password` + set `AUTH_PASSWORD`, restart, confirm `/login` is enforced and `/api/health` is still open.
+10. `curl -i http://127.0.0.1:3000/api/items` → `401` JSON; `curl -i http://127.0.0.1:3000/transactions` → `307` to `/login?from=%2Ftransactions`; `curl -H 'Cookie: amexlens_auth=ok' http://127.0.0.1:3000/api/items` → `401`; `/api/health` still answers.
 
 ## Known limitations
 
 - A pending → posted transition (Plaid emits `removed(pending_id)` + `added(posted_id)`) drops any manual override on the pending row. v2 could rehydrate by hashing `(date, amount, merchant_name)`.
 - libsql + postgres drivers are stubbed; the interface is ready, the driver files are not.
-- Passkey auth is reserved but not implemented.
+- Single owner only: one TOTP secret, one WebAuthn user handle, one set of recovery codes. No account recovery beyond those codes (lose them all and you reset the `auth_state`/`passkeys`/`recovery_codes` tables by hand and run setup again).
+- The sign-in lockout counter lives in process memory and resets on restart.
 - No multi-currency rollup with FX yet — each transaction stores its own `iso_currency_code` so totals can mix currencies if you link both USD and CAD cards. The dashboard formats per-row and doesn't try to convert.
 
 ## License

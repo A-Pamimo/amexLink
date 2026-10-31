@@ -58,7 +58,8 @@ File map:
 ## 4. What is NOT done
 
 - **WP0 (foundation) landed** on branch `wp0-foundation`: lockfile, `next@15.5.28` pinned, Node 22, vitest (`npm test`), CI, DB/client seams.
-- **WP1 (crypto core) landed** on branch `wp1-crypto-core` (stacks on WP0): `lib/crypto.ts` (AES-256-GCM `v1.` ciphertext with AAD, versioned key ring, `constantTimeEqual`/`sha256Hex`/`randomToken`), `npm run key:generate`, boot refuses to start without a 32-byte `TOKEN_ENCRYPTION_KEY`. Tokens are not yet stored encrypted; that is WP3. Still open:
+- **WP1 (crypto core) landed** on branch `wp1-crypto-core` (stacks on WP0): `lib/crypto.ts` (AES-256-GCM `v1.` ciphertext with AAD, versioned key ring, `constantTimeEqual`/`sha256Hex`/`randomToken`), `npm run key:generate`, boot refuses to start without a 32-byte `TOKEN_ENCRYPTION_KEY`. Tokens are not yet stored encrypted; that is WP3.
+- **WP2 (auth and sessions) landed** on branch `wp2-auth` (stacks on WP1): `AUTH_MODE ∈ {none, required}` default `required` (password/passkey env modes and `AUTH_PASSWORD` removed), `APP_ORIGIN`, `AUTH_SETUP_TOKEN`, migration `0003_auth`, server-side sessions (`__Host-amexlens_session`, 12 h / 2 h idle, rotation, logout deletes the row), TOTP + passkeys (`@simplewebauthn/server`) + recovery codes, `requireSession`/`requireMutation` (Origin + `X-AmexLens-Request`) as the first line of every handler, 5/15-min login lockout, `safeFrom`, setup/login UI. Closes F-01, F-02, F-04 (handler checks), F-05, F-10, F-15. Still open:
 - Any Phase 0 security fix beyond the above. Any liabilities/balance code. Cards overview UI. Reminders. Red-team pass. Test coverage beyond the foundation suites. Multi-user / iOS.
 
 ## 5. Security bar (mandatory)
