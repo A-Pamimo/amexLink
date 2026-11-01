@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Headless sync: useful for cron. Hits the running app's /api/plaid/sync.
-// Set BASE_URL=http://localhost:3000 (default) and AUTH_PASSWORD if AUTH_MODE=password.
+// Set BASE_URL=http://127.0.0.1:3000 (default) and AUTH_PASSWORD if AUTH_MODE=password.
 
-const base = process.env.BASE_URL ?? "http://localhost:3000";
+const base = process.env.BASE_URL ?? "http://127.0.0.1:3000";
 
 async function login(password) {
   const res = await fetch(`${base}/api/auth/login`, {

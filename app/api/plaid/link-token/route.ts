@@ -15,9 +15,10 @@ export async function POST() {
       language: "en",
     });
     return NextResponse.json({ link_token: res.data.link_token });
-  } catch (err: any) {
+  } catch (err) {
+    const e = err as { response?: { data?: unknown }; message?: string };
     return NextResponse.json(
-      { error: err?.response?.data ?? err?.message ?? "link_token failed" },
+      { error: e?.response?.data ?? e?.message ?? "link_token failed" },
       { status: 500 }
     );
   }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { SyncButton } from "@/components/SyncButton";
+import { apiFetch, errorMessage } from "@/lib/client/api";
 import type { PlaidItem } from "@/lib/types";
 
 interface HealthResponse {
@@ -17,7 +18,7 @@ interface HealthResponse {
 }
 
 export default function SettingsPage() {
-  const { data: itemsData } = useSWR<{ items: Omit<PlaidItem, "access_token">[] }>(
+  const { data: itemsData } = useSWR<{ items: PlaidItem[] }>(
     "/api/items"
   );
   const { data: health } = useSWR<HealthResponse>("/api/health");
@@ -30,15 +31,14 @@ export default function SettingsPage() {
     }
     setRemovingId(id);
     try {
-      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
+      await apiFetch(`/api/items/${id}`, { method: "DELETE" });
       toast.success(`Disconnected ${name ?? "card"}`);
       mutate("/api/items");
       mutate((k) => typeof k === "string" && k.startsWith("/api/stats/"));
       mutate((k) => typeof k === "string" && k.startsWith("/api/transactions"));
       mutate("/api/health");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not disconnect");
+    } catch (err) {
+      toast.error(errorMessage("Could not disconnect", err));
     } finally {
       setRemovingId(null);
     }

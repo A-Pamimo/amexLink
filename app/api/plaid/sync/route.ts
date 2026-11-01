@@ -20,9 +20,10 @@ export async function POST(req: Request) {
     }
     const result = await syncAllItems();
     return NextResponse.json(result);
-  } catch (err: any) {
+  } catch (err) {
+    const e = err as { response?: { data?: unknown }; message?: string };
     return NextResponse.json(
-      { error: err?.response?.data ?? err?.message ?? "sync failed" },
+      { error: e?.response?.data ?? e?.message ?? "sync failed" },
       { status: 500 }
     );
   }

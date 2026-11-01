@@ -69,7 +69,6 @@ export const BUCKET_COLORS: Record<BucketKey, string> = {
 
 export interface PlaidItem {
   id: string;
-  access_token: string;
   item_id: string;
   institution_name: string | null;
   institution_id: string | null;

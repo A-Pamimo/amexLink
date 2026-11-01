@@ -2,16 +2,17 @@
 
 A self-hosted personal-finance dashboard for Plaid-linked cards (Amex or otherwise). Connect a card, sync transactions, see them auto-categorized into spending buckets, override categories where the auto-rules miss, and watch a monthly stacked trend.
 
-Next.js 14 App Router + Tailwind + SQLite (or libsql / Postgres) + Plaid + Recharts + SWR.
+Next.js 15 (App Router, React 19) + Tailwind + SQLite (or libsql / Postgres) + Plaid + Recharts + SWR.
 
 ## Quick start
 
 ```bash
 git clone <repo>
 cd amexLink
+nvm use                           # Node 22 (see .nvmrc; engines >=22.12 <23)
 cp .env.example .env.local        # fill in PLAID_CLIENT_ID / PLAID_SECRET
 npm install
-npm run dev                       # http://localhost:3000
+npm run dev                       # http://127.0.0.1:3000 (bound to loopback only)
 ```
 
 Open `/settings` → **Connect a card** → in Plaid sandbox use:
@@ -72,7 +73,7 @@ The `DB` interface in `lib/db.ts` is the single source of truth — every API ro
 Manual sync lives on `/settings` (per-card and "Sync all"). For cron, hit it via:
 
 ```bash
-npm run sync                                # uses BASE_URL=http://localhost:3000
+npm run sync                                # uses BASE_URL=http://127.0.0.1:3000
 BASE_URL=https://your-host npm run sync
 ```
 
@@ -109,26 +110,36 @@ lib/
   types.ts                         BucketKey, Transaction, etc.
   categorize.ts                    Plaid -> bucket rules
   env.ts                           validated env loader
-  db.ts                            DB interface + driver dispatch
-  db/sqlite.ts                     better-sqlite3 implementation
-  db/migrations/0001_init.sql      schema
+  db.ts                            DB interface (ItemsRepo + TransactionsRepo + StatsRepo + CoreRepo) + driver dispatch
+  db/sqlite/index.ts               opens the DB, runs migrations, composes the repos
+  db/sqlite/{items,transactions,stats,core}.ts   per-area better-sqlite3 repos
+  db/migrations/                   NNNN_name.sql files plus code steps in index.ts
+  audit.ts                         security_log writer
+  boot.ts                          startup config checks (called from instrumentation.ts)
+  client/api.ts                    browser fetch wrapper (apiFetch, ApiError)
   plaid.ts                         PlaidApi factory
   transactions.ts                  /transactions/sync loop
   date.ts, format.ts, id.ts        small helpers
 middleware.ts                      auth gate
 scripts/sync.mjs                   cron-friendly sync trigger
 scripts/backup.mjs                 copies sqlite to data/backups/
+test/                              vitest suites, helpers (loadApp, plaid-fake) and fixtures
+instrumentation.ts                 runs assertBootConfig() when the server starts
 ```
 
 ## Scripts
 
 | command | what it does |
 |---|---|
-| `npm run dev` | Next dev server on `:3000` |
-| `npm run build` / `npm start` | production build + start |
-| `npm run lint` | next lint |
-| `npm run sync` | hits `/api/plaid/sync` on the running server (auths if `AUTH_PASSWORD` is set) |
-| `npm run backup` | copies the sqlite file to `data/backups/amexlens-<timestamp>.sqlite` |
+| `npm run dev` | Next dev server on `127.0.0.1:3000` (`-H 127.0.0.1`) |
+| `npm run build` / `npm start` | production build + start (`start` also binds `127.0.0.1`) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint flat config (`eslint.config.mjs`, `eslint-config-next`) |
+| `npm test` / `npm run test:watch` | vitest (node env, temp SQLite file per test; see `test/helpers/`) |
+| `npm run sync` | hits `/api/plaid/sync` on the running server (auths if `AUTH_PASSWORD` is set); loads `.env.local` via `--env-file-if-exists` |
+| `npm run backup` | copies the sqlite file to `data/backups/amexlens-<timestamp>.sqlite`; loads `.env.local` |
+
+CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, `npm audit --audit-level=high` and build on every PR.
 
 ## Verification
 

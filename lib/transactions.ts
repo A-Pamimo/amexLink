@@ -31,6 +31,9 @@ export async function syncItem(item: PlaidItem): Promise<SyncResult> {
   const db = await getDB();
   const plaid = getPlaid();
 
+  const secret = await db.getItemSecret(item.item_id);
+  if (!secret) throw new Error(`No access token stored for item ${item.item_id}`);
+
   let cursor: string | undefined = item.cursor ?? undefined;
   const added: PlaidTx[] = [];
   const modified: PlaidTx[] = [];
@@ -38,7 +41,7 @@ export async function syncItem(item: PlaidItem): Promise<SyncResult> {
 
   while (true) {
     const res = await plaid.transactionsSync({
-      access_token: item.access_token,
+      access_token: secret.access_token,
       cursor,
       options: { include_personal_finance_category: true },
     });

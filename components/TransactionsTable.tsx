@@ -3,6 +3,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { useState } from "react";
 import { toast } from "sonner";
 import { BucketSelect } from "./BucketSelect";
+import { apiFetch, errorMessage } from "@/lib/client/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { BUCKET_LABELS, type BucketKey, type Transaction } from "@/lib/types";
 
@@ -40,18 +41,16 @@ export function TransactionsTable({
     });
     mutate(key, optimistic, { revalidate: false });
     try {
-      const res = await fetch(`/api/transactions/${tx.id}`, {
+      await apiFetch(`/api/transactions/${tx.id}`, {
         method: "PATCH",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ bucket }),
       });
-      if (!res.ok) throw new Error(await res.text());
       toast.success(`Moved to ${BUCKET_LABELS[bucket]}`);
       mutate(
         (k) => typeof k === "string" && k.startsWith("/api/stats/")
       );
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not update");
+    } catch (err) {
+      toast.error(errorMessage("Could not update", err));
       mutate(key);
     } finally {
       setBusyId(null);
@@ -61,13 +60,12 @@ export function TransactionsTable({
   async function resetAuto(tx: Transaction) {
     setBusyId(tx.id);
     try {
-      const res = await fetch(`/api/transactions/${tx.id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
+      await apiFetch(`/api/transactions/${tx.id}`, { method: "DELETE" });
       toast.success("Reset to auto-categorized");
       mutate(key);
       mutate((k) => typeof k === "string" && k.startsWith("/api/stats/"));
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not reset");
+    } catch (err) {
+      toast.error(errorMessage("Could not reset", err));
     } finally {
       setBusyId(null);
     }

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
+import { apiFetch, errorMessage } from "@/lib/client/api";
 
 export function SyncButton({ itemId }: { itemId?: string }) {
   const [busy, setBusy] = useState(false);
@@ -13,9 +14,10 @@ export function SyncButton({ itemId }: { itemId?: string }) {
       const url = itemId
         ? `/api/plaid/sync?item_id=${encodeURIComponent(itemId)}`
         : "/api/plaid/sync";
-      const res = await fetch(url, { method: "POST" });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error?.error_message ?? "Sync failed");
+      const body = await apiFetch<{ added: number; modified: number; removed: number }>(
+        url,
+        { method: "POST" }
+      );
       toast.success(
         `Synced — +${body.added} added, ${body.modified} modified, ${body.removed} removed`
       );
@@ -27,8 +29,8 @@ export function SyncButton({ itemId }: { itemId?: string }) {
             k === "/api/items" ||
             k === "/api/health")
       );
-    } catch (err: any) {
-      toast.error(err?.message ?? "Sync failed");
+    } catch (err) {
+      toast.error(errorMessage("Sync failed", err));
     } finally {
       setBusy(false);
     }

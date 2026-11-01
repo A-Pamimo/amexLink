@@ -17,6 +17,7 @@ import {
   BUCKET_LABELS,
   NON_SPENDING_BUCKETS,
   type BucketKey,
+  type BucketTotals,
   type MonthlyTrendPoint,
 } from "@/lib/types";
 
@@ -44,7 +45,7 @@ export function MonthlyTrend({
     ? ALL_BUCKETS
     : ALL_BUCKETS.filter((b) => !NON_SPENDING_BUCKETS.includes(b));
 
-  const chartData =
+  const chartData: Array<{ month: string } & BucketTotals> =
     data?.trend.map((p) => ({
       month: p.month,
       ...p.byBucket,
@@ -63,7 +64,7 @@ export function MonthlyTrend({
             Loading…
           </div>
         ) : chartData.every((p) =>
-            buckets.every((b) => !((p as any)[b] > 0))
+            buckets.every((b) => !((p[b] ?? 0) > 0))
           ) ? (
           <div className="flex h-full items-center justify-center text-sm text-slate-400">
             No spending recorded yet.

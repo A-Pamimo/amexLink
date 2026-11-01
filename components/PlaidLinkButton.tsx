@@ -1,8 +1,13 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { usePlaidLink } from "react-plaid-link";
+import {
+  usePlaidLink,
+  type PlaidLinkOnSuccess,
+  type PlaidLinkOnSuccessMetadata,
+} from "react-plaid-link";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
+import { apiFetch, errorMessage } from "@/lib/client/api";
 
 export function PlaidLinkButton({ onLinked }: { onLinked?: () => void }) {
   const [token, setToken] = useState<string | null>(null);
@@ -12,30 +17,34 @@ export function PlaidLinkButton({ onLinked }: { onLinked?: () => void }) {
   const fetchToken = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/plaid/link-token", { method: "POST" });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error?.error_message ?? "link_token failed");
+      const body = await apiFetch<{ link_token: string }>("/api/plaid/link-token", {
+        method: "POST",
+      });
       setToken(body.link_token);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not start Plaid Link");
+    } catch (err) {
+      toast.error(errorMessage("Could not start Plaid Link", err));
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const onSuccess = useCallback(
-    async (public_token: string, metadata: any) => {
+  const onSuccess = useCallback<PlaidLinkOnSuccess>(
+    async (public_token: string | null, metadata: PlaidLinkOnSuccessMetadata) => {
+      if (!public_token) {
+        toast.error("Could not finish linking (no_public_token)");
+        return;
+      }
       try {
-        const res = await fetch("/api/plaid/exchange", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            public_token,
-            institution: metadata?.institution ?? null,
-          }),
-        });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body?.error?.error_message ?? "exchange failed");
+        const body = await apiFetch<{ item_id: string; sync: { added: number } }>(
+          "/api/plaid/exchange",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              public_token,
+              institution: metadata?.institution ?? null,
+            }),
+          }
+        );
         toast.success(
           `Linked ${metadata?.institution?.name ?? "account"} (synced ${body.sync.added} tx)`
         );
@@ -46,8 +55,8 @@ export function PlaidLinkButton({ onLinked }: { onLinked?: () => void }) {
             typeof key === "string" &&
             (key.startsWith("/api/stats/") || key.startsWith("/api/transactions"))
         );
-      } catch (err: any) {
-        toast.error(err?.message ?? "Could not finish linking");
+      } catch (err) {
+        toast.error(errorMessage("Could not finish linking", err));
       }
     },
     [mutate, onLinked]
@@ -57,7 +66,7 @@ export function PlaidLinkButton({ onLinked }: { onLinked?: () => void }) {
     token,
     onSuccess,
     onExit: (err) => {
-      if (err) toast.error(err.error_message ?? err.display_message ?? "Plaid exited");
+      if (err) toast.error(`Plaid Link exited (${err.error_code || "unknown"})`);
     },
   });
 

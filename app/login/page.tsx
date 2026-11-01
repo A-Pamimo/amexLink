@@ -2,6 +2,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { apiFetch, errorMessage } from "@/lib/client/api";
 
 function LoginForm() {
   const router = useRouter();
@@ -14,19 +15,14 @@ function LoginForm() {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      await apiFetch("/api/auth/login", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ password }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error ?? "Login failed");
-      }
       router.replace(from);
       router.refresh();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Login failed");
+    } catch (err) {
+      toast.error(errorMessage("Login failed", err));
     } finally {
       setBusy(false);
     }
