@@ -66,6 +66,12 @@ if (AUTH_MODE === "password" && !process.env.AUTH_PASSWORD) {
 // WP3: data key
 
 // WP4: cron
+// Optional bearer secret for headless /api/plaid/sync (scripts/sync.mjs). When set it must be
+// high-entropy (>= 32 chars), e.g. `openssl rand -base64 32`.
+const CRON_SECRET = process.env.CRON_SECRET?.trim() || null;
+if (CRON_SECRET !== null && CRON_SECRET.length < 32) {
+  throw new Error("CRON_SECRET must be at least 32 characters (or unset)");
+}
 
 export const env = Object.freeze({
   // --- Plaid ---
@@ -91,6 +97,7 @@ export const env = Object.freeze({
   TOKEN_ENCRYPTION_KEY_FILE: process.env.TOKEN_ENCRYPTION_KEY_FILE ?? null,
 
   // WP4: cron
+  CRON_SECRET,
 });
 
 export type Env = typeof env;

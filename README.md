@@ -42,6 +42,7 @@ All live in `.env.local` (gitignored). `.env.example` documents the full surface
 | `TOKEN_ENCRYPTION_KEY_FILE` | alternative | path | `0600` file holding the base64 key or 32 raw bytes, outside `data/` |
 | `BACKUP_AGE_RECIPIENT` | for `npm run backup` | `age1...` public key | backups are encrypted to it; see [Backups and restore drill](#backups-and-restore-drill) |
 | `AGE_IDENTITY_FILE` | for `npm run restore:check` only | path | age identity (private key). Only on the machine running the restore drill, never on the server |
+| `CRON_SECRET` | no | string, >= 32 chars | bearer secret for `npm run sync` (see [Cron](#cron)); the server refuses to start if it is set but shorter |
 
 Validation runs at server startup (`lib/env.ts`). Missing or invalid values throw a clear error before anything tries to talk to Plaid or the DB.
 
@@ -76,25 +77,46 @@ The `DB` interface in `lib/db.ts` is the single source of truth — every API ro
 - **`password`** — single shared password set via `AUTH_PASSWORD`. `middleware.ts` redirects to `/login` and sets a `httpOnly` cookie on success. Use this when reaching the app over Tailscale / LAN.
 - **`passkey`** — slot reserved; not implemented yet. Add `@simplewebauthn/server` and wire up `/api/auth/*` to ship.
 
-`/api/health` is always reachable so external monitors don't need credentials.
+`/api/health` is always reachable so external monitors don't need credentials. It answers `{ "ok": true }` (or `{ "ok": false }` with HTTP 503) and nothing else. Operator detail (storage, Plaid env, auth mode, country codes, counts) lives in `GET /api/system`, which is meant to sit behind the session once auth lands.
 
 ## Plaid sync flow
 
 1. `POST /api/plaid/link-token` → server creates a Link token (products: `transactions`, country codes from env).
-2. Client opens Plaid Link via `usePlaidLink`. On success, posts the `public_token` + institution metadata to `POST /api/plaid/exchange`.
-3. Server exchanges for an `access_token`, stores the item, and triggers an initial sync.
+2. Client opens Plaid Link via `usePlaidLink`. On success, posts only the `public_token` to `POST /api/plaid/exchange` (rate limited, 10/h; link-token is also 10/h).
+3. Server exchanges for an `access_token`, **stores the item immediately** (a duplicate `item_id` revokes the new token and returns 409 `already_linked`), takes institution id/name from Plaid (`itemGet` + `institutionsGetById`, never from the browser), then triggers an initial sync. A failed first sync does not fail the link: the response is HTTP 200 with `sync: { ok: false, code }`.
 4. `POST /api/plaid/sync[?item_id=...]` runs `/transactions/sync` in a `has_more` loop:
    - **added** → `INSERT OR IGNORE`, auto-categorized via `lib/categorize.ts`.
    - **modified** → `UPDATE`, but `bucket` is overwritten **only if `bucket_override = 0`** (your manual overrides survive re-syncs).
    - **removed** → hard `DELETE`.
-   - `cursor` + `last_synced_at` are persisted only on a fully successful loop.
+   - Each page is applied in one DB transaction; the Plaid call itself is never inside one.
+   - `cursor` + `last_synced_at` are persisted only after the full loop, by compare-and-set against the cursor the sync started from (a concurrent writer is never overwritten; `sync_cursor_conflict` is logged instead). Syncs of one item are serialised in-process.
+   - `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` restarts the loop from the starting cursor (max 3 attempts).
+   - `ITEM_LOGIN_REQUIRED` marks the item `needs_relink`; "Sync all" continues past a failing card and reports each card's result.
 
-Manual sync lives on `/settings` (per-card and "Sync all"). For cron, hit it via:
+Manual sync lives on `/settings` (per-card and "Sync all"), limited to 6/hour per card.
+
+### Cron
+
+`scripts/sync.mjs` posts to `/api/plaid/sync` with `Authorization: Bearer $CRON_SECRET`. It refuses to run without `CRON_SECRET`, defaults to `BASE_URL=http://127.0.0.1:3000`, refuses a non-loopback `BASE_URL` unless you pass `--allow-remote`, and prints counts and short codes only (exit 2 if any card failed). The secret is only accepted in the header, never in a query string.
 
 ```bash
-npm run sync                                # uses BASE_URL=http://127.0.0.1:3000
-BASE_URL=https://your-host npm run sync
+openssl rand -base64 32                     # put the result in .env.local as CRON_SECRET=...
+npm run sync                                # loads .env.local; BASE_URL=http://127.0.0.1:3000
+# crontab: 17 6 * * *  cd /path/to/amexLink && npm run sync >> sync.log 2>&1
 ```
+
+### Item status
+
+`GET /api/items` returns `status` and `last_error` (a provider error code only) per card:
+
+| status | meaning | what to do |
+|---|---|---|
+| `active` | syncing normally | nothing |
+| `needs_relink` | Plaid reports the login is no longer valid (`ITEM_LOGIN_REQUIRED` / `INVALID_ACCESS_TOKEN`) | re-link the card; a later successful sync returns it to `active` |
+| `consent_required` | Plaid needs additional consent (`ADDITIONAL_CONSENT_REQUIRED`) | re-consent via Link |
+| `revoke_failed` | Disconnect could not be confirmed by Plaid; the local row and token are kept | click **Retry revoke** on `/settings` |
+
+Disconnect revokes at Plaid first and deletes locally only after Plaid accepts (or says the item is already gone).
 
 ## Categories ("buckets")
 
@@ -123,7 +145,8 @@ app/
     transactions/{[id],}/route.ts  list / patch / reset bucket
     stats/{totals,trend}/route.ts  aggregations
     auth/{login,logout}/route.ts   password mode endpoints
-    health/route.ts                always-public status
+    health/route.ts                always-public { ok } probe
+    system/route.ts                operator detail (storage, env, counts)
 components/                        SWR-driven client UI
 lib/
   types.ts                         BucketKey, Transaction, etc.
@@ -140,10 +163,13 @@ lib/
   boot.ts                          startup config checks (called from instrumentation.ts)
   client/api.ts                    browser fetch wrapper (apiFetch, ApiError)
   plaid.ts                         PlaidApi factory
-  transactions.ts                  /transactions/sync loop
+  transactions.ts                  /transactions/sync loop (per-item lock, cursor CAS, SyncError)
+  sync/{lock,authorize}.ts         per-item mutex; CRON_SECRET bearer check for /api/plaid/sync
+  items/revoke.ts                  revoke-then-delete
+  http/{errors,params,rate-limit,log-shim}.ts   safe error bodies, query parsing, in-process rate limits
   date.ts, format.ts, id.ts        small helpers
 middleware.ts                      auth gate
-scripts/sync.mjs                   cron-friendly sync trigger
+scripts/sync.mjs                   cron-friendly sync trigger (CRON_SECRET bearer)
 scripts/backup.mjs                 consistent snapshot -> age-encrypted data/backups/*.sqlite.age
 scripts/restore-check.mjs          decrypts a backup to a temp file and opens it read-only (restore drill)
 scripts/verify-no-plaintext.mjs    scans data/ for plaintext Plaid token prefixes
@@ -161,7 +187,7 @@ instrumentation.ts                 runs assertBootConfig() when the server start
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint flat config (`eslint.config.mjs`, `eslint-config-next`) |
 | `npm test` / `npm run test:watch` | vitest (node env, temp SQLite file per test; see `test/helpers/`) |
-| `npm run sync` | hits `/api/plaid/sync` on the running server (auths if `AUTH_PASSWORD` is set); loads `.env.local` via `--env-file-if-exists` |
+| `npm run sync` | hits `/api/plaid/sync` on the running server with `Authorization: Bearer $CRON_SECRET` (see [Cron](#cron)); loads `.env.local` via `--env-file-if-exists` |
 | `npm run backup` | consistent snapshot of the DB, age-encrypted to `BACKUP_AGE_RECIPIENT`, written to `data/backups/amexlens-<timestamp>.sqlite.age` (mode `0600`, newest 7 kept); `-- --purge-plaintext` also deletes legacy `*.sqlite` backups; refuses to run without a recipient; loads `.env.local` |
 | `npm run restore:check -- <file.age>` | restore drill: decrypts with `AGE_IDENTITY_FILE` to a temp file, opens read-only, prints migration ids + item count, deletes the temp |
 | `npm run verify:no-plaintext [-- <dir>]` | exits 1 (listing file names) if any file under `data/` contains `access-sandbox-`/`access-development-`/`access-production-` |
@@ -208,7 +234,7 @@ A full local smoke test:
 7. Click **reset** on the overridden row → it returns to the categorizer's choice.
 8. Link a second sandbox item → the **All cards** filter chip appears in the nav; selecting one scopes the dashboard.
 9. `curl http://localhost:3000/api/stats/totals?from=2026-04-01&to=2026-04-30` returns `{ from, to, byBucket, grandTotal }`.
-10. Switch `AUTH_MODE=password` + set `AUTH_PASSWORD`, restart, confirm `/login` is enforced and `/api/health` is still open.
+10. Switch `AUTH_MODE=password` + set `AUTH_PASSWORD`, restart, confirm `/login` is enforced and `/api/health` is still open (and returns only `{"ok":true}`).
 
 ## Known limitations
 

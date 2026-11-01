@@ -25,8 +25,18 @@ describe("GET /api/items", () => {
 
     const body = JSON.parse(text) as { items: Array<Record<string, unknown>> };
     expect(body.items).toHaveLength(1);
+    expect(body.items[0].status).toBe("active");
     expect(Object.keys(body.items[0]).sort()).toEqual(
-      ["created_at", "id", "institution_id", "institution_name", "item_id", "last_synced_at"].sort()
+      [
+        "created_at",
+        "id",
+        "institution_id",
+        "institution_name",
+        "item_id",
+        "last_error",
+        "last_synced_at",
+        "status",
+      ].sort()
     );
   });
 });

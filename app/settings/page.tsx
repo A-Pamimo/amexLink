@@ -5,9 +5,32 @@ import { toast } from "sonner";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { SyncButton } from "@/components/SyncButton";
 import { apiFetch, errorMessage } from "@/lib/client/api";
-import type { PlaidItem } from "@/lib/types";
+import type { ItemStatus, PlaidItem } from "@/lib/types";
 
-interface HealthResponse {
+// What GET /api/items returns (an allowlist: no cursor, no token).
+type ItemView = Omit<PlaidItem, "cursor">;
+
+const STATUS_LABEL: Record<ItemStatus, { text: string; cls: string }> = {
+  active: { text: "Active", cls: "bg-emerald-500/10 text-emerald-300" },
+  needs_relink: { text: "Needs re-link", cls: "bg-amber-500/10 text-amber-300" },
+  consent_required: { text: "Consent required", cls: "bg-amber-500/10 text-amber-300" },
+  revoke_failed: { text: "Revoke failed", cls: "bg-rose-500/10 text-rose-300" },
+};
+
+function StatusBadge({ status, code }: { status: ItemStatus; code: string | null }) {
+  const s = STATUS_LABEL[status] ?? STATUS_LABEL.active;
+  return (
+    <span
+      className={`ml-2 rounded px-1.5 py-0.5 align-middle text-[10px] uppercase tracking-wide ${s.cls}`}
+      title={code ?? undefined}
+    >
+      {s.text}
+      {status !== "active" && code ? ` (${code})` : ""}
+    </span>
+  );
+}
+
+interface SystemResponse {
   db_ok: boolean;
   storage: string;
   auth_mode: string;
@@ -18,15 +41,19 @@ interface HealthResponse {
 }
 
 export default function SettingsPage() {
-  const { data: itemsData } = useSWR<{ items: PlaidItem[] }>(
+  const { data: itemsData } = useSWR<{ items: ItemView[] }>(
     "/api/items"
   );
-  const { data: health } = useSWR<HealthResponse>("/api/health");
+  // Detail moved off the public /api/health probe (which now only says ok / not ok).
+  const { data: health } = useSWR<SystemResponse>("/api/system");
   const { mutate } = useSWRConfig();
   const [removingId, setRemovingId] = useState<string | null>(null);
 
-  async function disconnect(id: string, name: string | null) {
-    if (!confirm(`Disconnect ${name ?? "this card"}? Its transactions will be removed.`)) {
+  async function disconnect(id: string, name: string | null, retry = false) {
+    if (
+      !retry &&
+      !confirm(`Disconnect ${name ?? "this card"}? Its transactions will be removed.`)
+    ) {
       return;
     }
     setRemovingId(id);
@@ -36,9 +63,12 @@ export default function SettingsPage() {
       mutate("/api/items");
       mutate((k) => typeof k === "string" && k.startsWith("/api/stats/"));
       mutate((k) => typeof k === "string" && k.startsWith("/api/transactions"));
-      mutate("/api/health");
+      mutate("/api/system");
     } catch (err) {
-      toast.error(errorMessage("Could not disconnect", err));
+      toast.error(
+        errorMessage(retry ? "Revoke failed again" : "Could not disconnect", err)
+      );
+      mutate("/api/items");
     } finally {
       setRemovingId(null);
     }
@@ -72,6 +102,7 @@ export default function SettingsPage() {
                 <div>
                   <div className="font-medium text-slate-100">
                     {item.institution_name ?? "Unknown institution"}
+                    <StatusBadge status={item.status} code={item.last_error} />
                   </div>
                   <div className="text-xs text-slate-400">
                     Linked {new Date(item.created_at).toLocaleDateString()} ·{" "}
@@ -83,11 +114,17 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-2">
                   <SyncButton itemId={item.item_id} />
                   <button
-                    onClick={() => disconnect(item.id, item.institution_name)}
+                    onClick={() =>
+                      disconnect(item.id, item.institution_name, item.status === "revoke_failed")
+                    }
                     disabled={removingId === item.id}
                     className="rounded-md border border-rose-400/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
                   >
-                    {removingId === item.id ? "Removing…" : "Disconnect"}
+                    {removingId === item.id
+                      ? "Removing…"
+                      : item.status === "revoke_failed"
+                        ? "Retry revoke"
+                        : "Disconnect"}
                   </button>
                 </div>
               </div>

@@ -3,6 +3,7 @@ import { env } from "./env";
 import type {
   BucketKey,
   BucketTotals,
+  ItemStatus,
   MonthlyTrendPoint,
   PlaidItem,
   Transaction,
@@ -66,6 +67,33 @@ export interface ItemsRepo {
   deleteItem(id: string): Promise<void>;
 }
 
+/** WP4: item lifecycle (status, institution metadata, cursor compare-and-set). */
+export interface ItemLifecycleRepo {
+  /** `last_error` is a provider error_code enum string only, never a message. */
+  setItemStatus(item_id: string, status: ItemStatus, last_error?: string | null): Promise<void>;
+  updateItemInstitution(
+    item_id: string,
+    institution_id: string | null,
+    institution_name: string | null
+  ): Promise<void>;
+  /**
+   * `UPDATE ... WHERE item_id = ? AND cursor IS ?`. Returns true only if the stored
+   * cursor still equalled `expectedCursor` (null = never synced) and was replaced.
+   */
+  casUpdateCursor(
+    item_id: string,
+    expectedCursor: string | null,
+    newCursor: string,
+    last_synced_at: string
+  ): Promise<boolean>;
+}
+
+export interface TransactionPage {
+  added: TransactionInsert[];
+  modified: TransactionInsert[];
+  removedIds: string[];
+}
+
 export interface TransactionsRepo {
   upsertAddedTransactions(rows: TransactionInsert[]): Promise<number>;
   upsertModifiedTransactions(rows: TransactionInsert[]): Promise<number>;
@@ -74,6 +102,8 @@ export interface TransactionsRepo {
   patchTransactionBucket(id: string, bucket: BucketKey): Promise<Transaction | null>;
   resetTransactionBucket(id: string): Promise<Transaction | null>;
   countTransactions(): Promise<number>;
+  /** WP4: applies one sync page (added, modified, removed) in a single DB transaction. */
+  applyTransactionPage(page: TransactionPage): Promise<{ added: number; modified: number; removed: number }>;
 }
 
 export interface StatsRepo {
@@ -85,10 +115,14 @@ export interface CoreRepo {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
   appendSecurityLog(row: SecurityLogInsert): Promise<void>;
+  /** WP4: `SELECT 1`; true when the database answers. */
+  ping(): Promise<boolean>;
+  /** WP4: reclaim freed pages (e.g. after deleting an item). Must run outside a transaction. */
+  vacuum(): Promise<void>;
 }
 
 // Add one XRepo interface above and one `extends` here per feature area.
-export interface DB extends ItemsRepo, TransactionsRepo, StatsRepo, CoreRepo {}
+export interface DB extends ItemsRepo, ItemLifecycleRepo, TransactionsRepo, StatsRepo, CoreRepo {}
 
 let cached: DB | null = null;
 

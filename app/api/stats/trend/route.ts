@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDB } from "@/lib/db";
+import { intParam, strParam } from "@/lib/http/params";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,8 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const sp = url.searchParams;
-  const months = Math.max(1, Math.min(24, parseInt(sp.get("months") ?? "6", 10) || 6));
-  const item_id = sp.get("item_id") ?? undefined;
+  const months = intParam(sp, "months", { def: 6, min: 1, max: 24 });
+  const item_id = strParam(sp, "item_id", { max: 128 });
   const include_non_spending = sp.get("include_non_spending") === "1";
 
   const db = await getDB();
