@@ -17,6 +17,7 @@
     "backup": "node --env-file-if-exists=.env.local scripts/backup.mjs",
     "restore:check": "node --env-file-if-exists=.env.local scripts/restore-check.mjs",
     "verify:no-plaintext": "node --env-file-if-exists=.env.local scripts/verify-no-plaintext.mjs",
+    "verify:sandbox": "node --env-file-if-exists=.env.local scripts/verify-sandbox.mjs",
     "key:generate": "node scripts/key-generate.mjs"
   },
   "dependencies": {

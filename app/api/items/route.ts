@@ -21,6 +21,7 @@ export async function GET(req: Request) {
     last_synced_at: i.last_synced_at,
     status: i.status,
     last_error: i.last_error,
+    liabilities_status: i.liabilities_status,
   }));
   return NextResponse.json({ items: safe });
 }

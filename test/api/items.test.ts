@@ -35,6 +35,7 @@ describe("GET /api/items", () => {
         "item_id",
         "last_error",
         "last_synced_at",
+        "liabilities_status",
         "status",
       ].sort()
     );

@@ -45,6 +45,9 @@ export function assertBootConfig(): void {
       "APP_ORIGIN must be https:// when PLAID_ENV=production (the session cookie is Secure)."
     );
   }
+  if (plaidProduction && env.PLAID_REDIRECT_URI && !env.PLAID_REDIRECT_URI.startsWith("https://")) {
+    throw new Error("PLAID_REDIRECT_URI must be https:// when PLAID_ENV=production.");
+  }
   if (plaidProduction && env.COOKIE_INSECURE_DEV) {
     throw new Error("COOKIE_INSECURE_DEV=1 is refused when PLAID_ENV=production.");
   }

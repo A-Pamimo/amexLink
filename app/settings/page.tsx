@@ -3,6 +3,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AuthSettings } from "@/components/AuthSettings";
+import { ItemActions } from "@/components/ItemActions";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { SyncButton } from "@/components/SyncButton";
 import { apiFetch, errorMessage } from "@/lib/client/api";
@@ -113,7 +114,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <SyncButton itemId={item.item_id} />
+                  <ItemActions item={item} />
                   <button
                     onClick={() =>
                       disconnect(item.id, item.institution_name, item.status === "revoke_failed")

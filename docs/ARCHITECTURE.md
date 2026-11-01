@@ -181,7 +181,7 @@ New items: `products: ["transactions"]`, `required_if_supported_products: ["liab
 
 Existing items that predate Liabilities: Settings calls link-token with `item_id`. The server loads the stored access token and opens Link in update mode with `additional_consented_products: ["liabilities"]` and no `products` array. On success the browser calls `/api/plaid/consent` with the item id. The client never sends an access token. The server refreshes that item.
 
-OAuth (US institutions; Canadian institutions do not currently use OAuth): the link token is kept in `sessionStorage` under `amexlens_plaid_link` so `/plaid/oauth` can resume with `receivedRedirectUri`. The token is cleared after success. It is not put in the query string.
+OAuth (US institutions; whether a given Canadian institution uses OAuth is probed, not assumed, see data-providers.md): the link token is kept in `sessionStorage` under `amexlens_plaid_link` so `/plaid/oauth` can resume with `receivedRedirectUri`. The token is cleared after success. It is not put in the query string.
 
 Re-auth: Plaid error `ITEM_LOGIN_REQUIRED`, and the webhook codes `PENDING_EXPIRATION` and `USER_PERMISSION_REVOKED`, set `plaid_items.status`. Settings shows that status. Update mode without extra products is the repair path. The same button requests liabilities consent when status is `consent_required`.
 
