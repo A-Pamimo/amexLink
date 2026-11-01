@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireMutation } from "@/lib/auth/guard";
 import { rotateSessionOnResponse } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
+import { readJsonBody } from "@/lib/http/body";
 import { apiError } from "@/lib/http/errors";
 import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
 import { SyncError, syncItem } from "@/lib/transactions";
@@ -19,12 +20,9 @@ export async function POST(req: Request) {
   const auth = await requireMutation(req);
   if (!auth.ok) return auth.response;
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return apiError(400, "invalid_json");
-  }
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.value;
   const item_id = (body as { item_id?: unknown } | null)?.item_id;
   if (typeof item_id !== "string" || item_id === "" || item_id.length > 128) {
     return apiError(400, "item_id_required");

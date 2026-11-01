@@ -256,12 +256,16 @@ describe("passkey state machine", () => {
     expect(done2.status).toBe(200);
     expect(tokenFromResponse(done2)).toBeNull(); // not the first factor: no new cookie
 
-    const status = await (await import("@/app/api/auth/status/route")).GET();
+    const statusRoute = (await import("@/app/api/auth/status/route")).GET;
+    const status = await statusRoute(makeReq("/api/auth/status", { token }));
     expect(await status.json()).toEqual({
       mode: "required",
       setup_required: false,
       factors: { totp: false, passkeys: 2, recovery_codes_remaining: 0 },
     });
+    // Anonymous callers learn which factors exist, not how many recovery codes are left.
+    const anon = await statusRoute(makeReq("/api/auth/status"));
+    expect((await anon.json()).factors).toEqual({ totp: false, passkeys: 2, recovery_codes_remaining: null });
   });
 
   it("login via passkey sets the cookie; a rejected assertion is counted and returns invalid_code", async () => {

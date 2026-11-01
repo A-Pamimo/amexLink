@@ -156,7 +156,7 @@ describe("health and system", () => {
       storage: "sqlite",
       auth_mode: "none",
       plaid_env: "sandbox",
-      country_codes: ["US", "CA"],
+      country_codes: ["CA"],
       items_count: 1,
       tx_count: 1,
     });

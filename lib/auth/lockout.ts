@@ -1,3 +1,4 @@
+import { log } from "../log";
 import { errorJson } from "./http";
 
 /**
@@ -52,6 +53,8 @@ export function recordFailure(scope: string, now: number = Date.now()): void {
   if (b.failures.length >= LOCKOUT_MAX_FAILURES) {
     b.lockedUntil = now + LOCKOUT_DURATION_MS;
     b.failures = [];
+    // SECURITY.md 3.6: a lockout trip is a security event (scope only, no code, no address).
+    log.warn("login_locked_out", { scope, until: new Date(b.lockedUntil).toISOString() });
   }
 }
 

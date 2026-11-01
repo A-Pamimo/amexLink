@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { audit } from "@/lib/audit";
 import { requireMutation } from "@/lib/auth/guard";
 import { rotateSessionOnResponse } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
+import { readJsonBody } from "@/lib/http/body";
 import { apiError, extractProviderError, handleProviderError } from "@/lib/http/errors";
 import { log } from "@/lib/log";
 import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
@@ -34,12 +36,10 @@ export async function POST(req: Request) {
   const limited = rateLimited("exchange", 10, HOUR_MS);
   if (limited) return limited;
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return apiError(400, "invalid_json");
-  }
+  // Bounded read (lib/http/body.ts): oversize -> 413, unparsable -> 400, never buffered unbounded.
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.value;
   // Only `public_token` is read. Anything else the browser sends (including institution
   // name/id) is ignored: institution metadata comes from Plaid below (SECURITY.md C-T3).
   const public_token = (body as { public_token?: unknown } | null)?.public_token;
@@ -79,6 +79,8 @@ export async function POST(req: Request) {
     log.error("exchange_store_failed", { item_id });
     return apiError(500, "storage_error");
   }
+  // SECURITY.md 3.6 / C-R1: "exchange succeeded (item id only)" in the append-only log.
+  await audit("link.exchange", { item_id, outcome: "ok" });
 
   // Institution metadata from Plaid, not the browser. Non-fatal: the card is already stored.
   try {

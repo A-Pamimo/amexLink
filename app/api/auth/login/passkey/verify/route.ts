@@ -17,6 +17,7 @@ export async function POST(req: Request) {
   if (locked) return locked;
 
   const body = await readJsonObject(req);
+  if (body instanceof Response) return body;
   const outcome = await finishAuthentication({
     challenge_id: body.challenge_id,
     response: body.response,

@@ -51,4 +51,10 @@ export function assertBootConfig(): void {
   if (plaidProduction && env.COOKIE_INSECURE_DEV) {
     throw new Error("COOKIE_INSECURE_DEV=1 is refused when PLAID_ENV=production.");
   }
+  // WP9 (red-team RT-07): the OAuth return page must be on the app origin. The Link token is
+  // held in this origin's sessionStorage, so a redirect anywhere else can never finish the flow
+  // and would hand the issuer's `oauth_state_id` to another host.
+  if (env.PLAID_REDIRECT_URI && env.APP_ORIGIN && new URL(env.PLAID_REDIRECT_URI).origin !== env.APP_ORIGIN) {
+    throw new Error("PLAID_REDIRECT_URI must be on APP_ORIGIN (e.g. <APP_ORIGIN>/plaid/oauth).");
+  }
 }
