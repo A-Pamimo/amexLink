@@ -1,4 +1,7 @@
 import { vi } from "vitest";
+import accountsBalanceGet from "../fixtures/plaid/accounts_balance_get.json";
+import accountsGet from "../fixtures/plaid/accounts_get.json";
+import liabilitiesGet from "../fixtures/plaid/liabilities_get.json";
 import transactionsSync from "../fixtures/plaid/transactions_sync.json";
 
 /**
@@ -55,6 +58,16 @@ export function installPlaidFake() {
     linkTokenCreate: vi.fn<(req?: Record<string, unknown>) => Promise<unknown>>(async () => ({
       data: { link_token: "link-sandbox-fake", expiration: "2026-10-31T00:00:00Z", request_id: "req_x2" },
     })),
+    // WP6a: card data. Fixtures deliberately carry forbidden fields (numbers, owners, account_number).
+    accountsGet: vi.fn<(req?: Record<string, unknown>) => Promise<{ data: unknown }>>(async () => ({
+      data: structuredClone(accountsGet),
+    })),
+    accountsBalanceGet: vi.fn<(req?: Record<string, unknown>) => Promise<{ data: unknown }>>(async () => ({
+      data: structuredClone(accountsBalanceGet),
+    })),
+    liabilitiesGet: vi.fn<(req?: Record<string, unknown>) => Promise<{ data: unknown }>>(async () => ({
+      data: structuredClone(liabilitiesGet),
+    })),
     itemRemove: vi.fn<(req?: Record<string, unknown>) => Promise<unknown>>(async () => ({ data: { request_id: "req_x3" } })),
     itemGet: vi.fn<(req?: Record<string, unknown>) => Promise<unknown>>(async () => ({
       data: {
@@ -70,11 +83,15 @@ export function installPlaidFake() {
     })),
   };
 
-  vi.doMock("@/lib/plaid", () => ({
-    getPlaid: () => fake,
-    plaidCountryCodes: () => ["US", "CA"],
-    TRANSACTIONS_PRODUCT: ["transactions"],
-  }));
+  // Real constants (LINK_*, assertLeastPrivilege) stay real; only the client and countries are faked.
+  vi.doMock("@/lib/plaid", async () => {
+    const actual = await vi.importActual<typeof import("@/lib/plaid")>("@/lib/plaid");
+    return {
+      ...actual,
+      getPlaid: () => fake,
+      plaidCountryCodes: () => ["US", "CA"],
+    };
+  });
 
   return fake;
 }

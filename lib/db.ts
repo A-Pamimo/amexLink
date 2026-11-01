@@ -1,6 +1,15 @@
 import "server-only";
 import { env } from "./env";
 import type {
+  AccountRow,
+  BalanceSource,
+  CardRow,
+  FieldKey,
+  FieldObservation,
+  LiabilitiesStatus,
+  ProviderCard,
+} from "./providers/types";
+import type {
   BucketKey,
   BucketTotals,
   ItemStatus,
@@ -121,8 +130,43 @@ export interface CoreRepo {
   vacuum(): Promise<void>;
 }
 
+export interface ItemRefreshMeta {
+  liabilities_status: LiabilitiesStatus;
+  balance_source: BalanceSource;
+  last_refreshed_at: string;
+}
+
+/** WP6a: provider accounts and per-field observations. Written only by the refresh path. */
+export interface CardsRepo {
+  /**
+   * Insert or update accounts by `(provider, provider_account_id)`. Ids are random UUIDs and
+   * stay stable across re-upserts. Returns `provider_account_id -> account id`.
+   */
+  upsertAccounts(
+    item_id: string,
+    provider: string,
+    cards: ProviderCard[]
+  ): Promise<Record<string, string>>;
+  /** Delete + insert in one transaction, so a refresh never leaves a half-written card. */
+  replaceAccountFields(
+    account_id: string,
+    provider: string,
+    obs: Partial<Record<FieldKey, FieldObservation>>
+  ): Promise<void>;
+  /** Every stored account with its observations, joined with its item. */
+  listCardRows(): Promise<CardRow[]>;
+  setItemRefreshMeta(item_id: string, meta: ItemRefreshMeta): Promise<void>;
+  getAccountById(id: string): Promise<AccountRow | null>;
+}
+
 // Add one XRepo interface above and one `extends` here per feature area.
-export interface DB extends ItemsRepo, ItemLifecycleRepo, TransactionsRepo, StatsRepo, CoreRepo {}
+export interface DB
+  extends ItemsRepo,
+    ItemLifecycleRepo,
+    TransactionsRepo,
+    StatsRepo,
+    CoreRepo,
+    CardsRepo {}
 
 let cached: DB | null = null;
 

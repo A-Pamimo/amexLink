@@ -72,4 +72,34 @@ describe("scripts/sync.mjs", () => {
       server.close();
     }
   });
+  it("prints overdue= and due_soon= counts (never amounts) when the server includes them", async () => {
+    const server = http.createServer((_req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          items: [{ item_id: "a", ok: true, added: 0, modified: 0, removed: 0 }],
+          totals: { added: 0, modified: 0, removed: 0 },
+          cards: { overdue: 2, due_soon: 1, balance: 99999, note: "do not print" },
+        })
+      );
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as { port: number };
+    try {
+      const r = await new Promise<{ status: number; stdout: string }>((resolve) => {
+        execFile(
+          process.execPath,
+          [script],
+          { env: { PATH: process.env.PATH ?? "", CRON_SECRET: SECRET, BASE_URL: `http://127.0.0.1:${port}` } as unknown as NodeJS.ProcessEnv },
+          (err, stdout) => resolve({ status: err ? 1 : 0, stdout })
+        );
+      });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("overdue=2 due_soon=1");
+      expect(r.stdout).not.toContain("99999");
+      expect(r.stdout).not.toContain("do not print");
+    } finally {
+      server.close();
+    }
+  });
 });

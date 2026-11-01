@@ -70,6 +70,11 @@ async function main() {
   }
   const t = body?.totals ?? {};
   console.log(`total added=${t.added ?? 0} modified=${t.modified ?? 0} removed=${t.removed ?? 0} failed=${failed}`);
+  // Urgency counts only (no amounts), printed when the server includes them.
+  const c = body?.cards;
+  if (c && Number.isInteger(c.overdue) && Number.isInteger(c.due_soon)) {
+    console.log(`cards overdue=${c.overdue} due_soon=${c.due_soon}`);
+  }
   if (failed > 0) process.exit(2);
 }
 

@@ -81,7 +81,7 @@ The `DB` interface in `lib/db.ts` is the single source of truth — every API ro
 
 ## Plaid sync flow
 
-1. `POST /api/plaid/link-token` → server creates a Link token (products: `transactions`, country codes from env).
+1. `POST /api/plaid/link-token` → server creates a Link token (`products: [transactions]`, `required_if_supported_products: [liabilities]`, credit-card account filter, per-install random `client_user_id`, country codes from env). Nothing beyond Transactions and Liabilities is ever requested; boot fails if that list widens.
 2. Client opens Plaid Link via `usePlaidLink`. On success, posts only the `public_token` to `POST /api/plaid/exchange` (rate limited, 10/h; link-token is also 10/h).
 3. Server exchanges for an `access_token`, **stores the item immediately** (a duplicate `item_id` revokes the new token and returns 409 `already_linked`), takes institution id/name from Plaid (`itemGet` + `institutionsGetById`, never from the browser), then triggers an initial sync. A failed first sync does not fail the link: the response is HTTP 200 with `sync: { ok: false, code }`.
 4. `POST /api/plaid/sync[?item_id=...]` runs `/transactions/sync` in a `has_more` loop:
@@ -94,6 +94,38 @@ The `DB` interface in `lib/db.ts` is the single source of truth — every API ro
    - `ITEM_LOGIN_REQUIRED` marks the item `needs_relink`; "Sync all" continues past a failing card and reports each card's result.
 
 Manual sync lives on `/settings` (per-card and "Sync all"), limited to 6/hour per card.
+
+## Cards API, refresh and field statuses
+
+`GET /api/cards` returns the cards overview, derived at read time from stored provider data (nothing in it is client-writable):
+
+```jsonc
+{
+  "cards": [{ "id", "institution_name", "name", "mask", "iso_currency_code", "item_id", "item_status", "last_synced_at",
+              "liabilities_status", "balance_source", "last_refreshed_at",
+              "fields": { "<field>": { "status", "value", "observed_at", "error_code", "provider" } },
+              "utilization": { "ratio", "computed": true, "reason?" },
+              "urgency", "days_until_due" }],
+  "totals_by_currency": { "CAD": { "balance", "statement_due", "utilization": { "ratio", "included", "excluded" } } },
+  "counts": { "overdue", "due_soon" },
+  "today": "YYYY-MM-DD",          // America/Toronto
+  "generated_at": "..."
+}
+```
+
+Cards are sorted overdue, due soon (today..+7 days), scheduled by date, past-but-not-overdue, unknown. Totals are per currency and are never summed across currencies; utilization is `sum(balance) / sum(limit)` over cards that have both, and `excluded` counts the rest.
+
+**Fields** are `current_balance`, `available_credit`, `credit_limit`, `statement_balance`, `minimum_payment`, `next_payment_due_date`, `last_payment_amount`, `last_payment_date`, `last_statement_issue_date`, `is_overdue`, `apr`. Each one carries a status; a missing field is shown as missing, with the reason, and there is no manual entry or override:
+
+| status | meaning |
+|---|---|
+| `present` | value came from the provider (`is_overdue: false` is a real value) |
+| `not_supplied` | the call worked and the field was null / an empty APR list |
+| `not_supported` | the institution or product does not offer it (`PRODUCTS_NOT_SUPPORTED`, `NO_LIABILITY_ACCOUNTS`) |
+| `consent_required` | Plaid needs additional consent for Liabilities (`ADDITIONAL_CONSENT_REQUIRED`); the item is marked `consent_required` |
+| `error` | the call failed or is not ready yet (`PRODUCT_NOT_READY`); `error_code` is a provider code, never a message |
+
+**Refresh semantics.** Every transaction sync (manual, cron, first link) also refreshes the cards of that item using the free cached `/accounts/get` plus `/liabilities/get`; a failure there never fails the sync or rolls back transactions. `POST /api/cards/{id}/refresh` is the only path that calls the billed `/accounts/balance/get`; it is limited to one call per card per 10 minutes (429 with `Retry-After`), falls back to the cached balance when the live call fails, and the response says which one you got (`refresh.balance_source`: `realtime` or `cached`). The sync response also carries `cards: { overdue, due_soon }` counts, which `npm run sync` prints (no amounts).
 
 ### Cron
 
@@ -140,6 +172,7 @@ app/
   login/page.tsx                   used when AUTH_MODE=password
   api/
     plaid/{link-token,exchange,sync}/route.ts
+    cards/route.ts                 GET overview; cards/[id]/refresh/route.ts POST live balance
     items/[id]/route.ts            disconnect a card
     items/route.ts                 list cards
     transactions/{[id],}/route.ts  list / patch / reset bucket

@@ -1,0 +1,95 @@
+{
+  "accounts": [
+    {
+      "account_id": "acc_amex_cad",
+      "balances": {
+        "available": 8499.82,
+        "current": 1500.18,
+        "limit": 10000,
+        "iso_currency_code": "CAD",
+        "unofficial_currency_code": null
+      },
+      "mask": "1005",
+      "name": "Amex Cobalt",
+      "type": "credit",
+      "subtype": "credit card",
+      "account_number": "371449635398431",
+      "numbers": { "ach": [{ "account": "123456789", "routing": "011401533" }] },
+      "owners": [{ "names": ["Pat Example"] }]
+    },
+    {
+      "account_id": "acc_visa_usd",
+      "balances": {
+        "available": 4749.45,
+        "current": 250.55,
+        "limit": 5000,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "4321",
+      "name": "Visa Signature",
+      "type": "credit",
+      "subtype": "credit card",
+      "account_number": "371449635398431"
+    }
+  ],
+  "liabilities": {
+    "credit": [
+      {
+        "account_id": "acc_amex_cad",
+        "account_number": "371449635398431",
+        "aprs": [
+          {
+            "apr_percentage": 20.99,
+            "apr_type": "purchase_apr",
+            "balance_subject_to_apr": 1420.18,
+            "interest_charge_amount": 0,
+            "account_number": "371449635398431"
+          },
+          {
+            "apr_percentage": 21.99,
+            "apr_type": "cash_apr",
+            "balance_subject_to_apr": 0,
+            "interest_charge_amount": 0
+          },
+          {
+            "apr_percentage": 29.99,
+            "apr_type": "penalty_apr",
+            "balance_subject_to_apr": null,
+            "interest_charge_amount": null
+          }
+        ],
+        "is_overdue": false,
+        "last_payment_amount": 500,
+        "last_payment_date": "2026-10-16",
+        "last_statement_issue_date": "2026-10-26",
+        "last_statement_balance": 1420.18,
+        "minimum_payment_amount": 35,
+        "next_payment_due_date": "2026-11-15",
+        "cash_advance_limit": 2000,
+        "numbers": { "ach": [{ "account": "123456789", "routing": "011401533" }] }
+      },
+      {
+        "account_id": "acc_visa_usd",
+        "aprs": [],
+        "is_overdue": null,
+        "last_payment_amount": null,
+        "last_payment_date": null,
+        "last_statement_issue_date": "2026-10-20",
+        "last_statement_balance": 240.1,
+        "minimum_payment_amount": null,
+        "next_payment_due_date": "2026-11-03",
+        "owners": [{ "names": ["Pat Example"] }]
+      }
+    ],
+    "mortgage": null,
+    "student": null
+  },
+  "item": {
+    "item_id": "item_fake_001",
+    "institution_id": "ins_100533"
+  },
+  "numbers": { "ach": [{ "account": "123456789", "routing": "011401533" }] },
+  "owners": [{ "names": ["Pat Example"] }],
+  "request_id": "req_liabilities_get"
+}
