@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sync": "node --env-file-if-exists=.env.local scripts/sync.mjs",
-    "backup": "node --env-file-if-exists=.env.local scripts/backup.mjs"
+    "backup": "node --env-file-if-exists=.env.local scripts/backup.mjs",
+    "key:generate": "node scripts/key-generate.mjs"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.4.1",
