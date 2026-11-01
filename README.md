@@ -170,6 +170,14 @@ npm run sync                                # loads .env.local; BASE_URL=http://
 
 Disconnect revokes at Plaid first and deletes locally only after Plaid accepts (or says the item is already gone).
 
+## Currencies
+
+Spending totals and the monthly trend are computed **per currency** (grouped by the transaction's `iso_currency_code`); CAD and USD amounts are never added together and there is no combined figure. The dashboard shows a currency selector when more than one currency exists (default CAD, then the first; remembered in `localStorage` as `amexlens.currency`). Transactions with no currency code are grouped as `UNKNOWN`, shown as a plain number with a "currency unknown" caption. Month keys and the "this month" range use the America/Toronto date; each transaction is bucketed by its own civil `date`.
+
+- `GET /api/stats/totals?from&to[&item_id][&include_non_spending][&currency]` returns `{ from, to, currencies, byCurrency: { CAD: { byBucket, grandTotal } } }`.
+- `GET /api/stats/trend?months[&item_id][&include_non_spending][&currency]` returns `{ months, currencies, byCurrency: { CAD: MonthlyTrendPoint[] } }`.
+- `GET /api/stats/currencies` returns `{ currencies }`. `currency` must match `^[A-Z]{3}$` or be `UNKNOWN`, else 400.
+
 ## Categories ("buckets")
 
 `lib/categorize.ts` runs three tiers, in order:
@@ -291,7 +299,7 @@ A full local smoke test:
 6. Override a row's bucket → refresh → override sticks. Click **Sync all** on `/settings` → override still sticks (validates the `bucket_override` guard).
 7. Click **reset** on the overridden row → it returns to the categorizer's choice.
 8. Link a second sandbox item → the **All cards** filter chip appears in the nav; selecting one scopes the dashboard.
-9. `curl http://localhost:3000/api/stats/totals?from=2026-04-01&to=2026-04-30` returns `{ from, to, byBucket, grandTotal }`.
+9. `curl http://localhost:3000/api/stats/totals?from=2026-04-01&to=2026-04-30` returns `{ from, to, currencies, byCurrency: { CAD: { byBucket, grandTotal }, ... } }`.
 10. `curl -i http://127.0.0.1:3000/api/items` → `401` JSON; `curl -i http://127.0.0.1:3000/transactions` → `307` to `/login?from=%2Ftransactions`; `curl -H 'Cookie: amexlens_auth=ok' http://127.0.0.1:3000/api/items` → `401`; `/api/health` still answers.
 
 ## Known limitations
@@ -300,7 +308,7 @@ A full local smoke test:
 - libsql + postgres drivers are stubbed; the interface is ready, the driver files are not.
 - Single owner only: one TOTP secret, one WebAuthn user handle, one set of recovery codes. No account recovery beyond those codes (lose them all and you reset the `auth_state`/`passkeys`/`recovery_codes` tables by hand and run setup again).
 - The sign-in lockout counter lives in process memory and resets on restart.
-- No multi-currency rollup with FX yet — each transaction stores its own `iso_currency_code` so totals can mix currencies if you link both USD and CAD cards. The dashboard formats per-row and doesn't try to convert.
+- No multi-currency rollup with FX: stats are per currency and never combined (see Currencies).
 
 ## License
 

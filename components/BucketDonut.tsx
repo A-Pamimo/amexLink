@@ -2,31 +2,37 @@
 import useSWR from "swr";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { defaultRange } from "@/lib/date";
-import { formatCurrency } from "@/lib/format";
+import { currencyCaption, formatCurrency } from "@/lib/format";
 import { BUCKET_COLORS, BUCKET_LABELS, type BucketKey, type BucketTotals } from "@/lib/types";
 
 interface TotalsResponse {
   from: string;
   to: string;
-  byBucket: BucketTotals;
-  grandTotal: number;
+  currencies: string[];
+  byCurrency: Record<string, { byBucket: BucketTotals; grandTotal: number }>;
 }
 
 export function BucketDonut({
   itemId,
   includeNonSpending,
+  currency,
 }: {
   itemId?: string;
   includeNonSpending?: boolean;
+  currency?: string;
 }) {
   const range = defaultRange();
   const itemQs = itemId ? `&item_id=${itemId}` : "";
   const incQs = includeNonSpending ? `&include_non_spending=1` : "";
   const { data, isLoading } = useSWR<TotalsResponse>(
-    `/api/stats/totals?from=${range.from}&to=${range.to}${itemQs}${incQs}`
+    currency
+      ? `/api/stats/totals?from=${range.from}&to=${range.to}${itemQs}${incQs}&currency=${currency}`
+      : null
   );
+  const cur = currency ?? null;
+  const totals = currency ? data?.byCurrency[currency] : undefined;
 
-  const entries = Object.entries(data?.byBucket ?? {})
+  const entries = Object.entries(totals?.byBucket ?? {})
     .map(([k, v]) => ({ bucket: k as BucketKey, value: v ?? 0 }))
     .filter((e) => e.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -35,7 +41,10 @@ export function BucketDonut({
     <div className="neo-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-slate-200">By bucket — this month</h3>
-        <span className="text-xs text-slate-400">{formatCurrency(data?.grandTotal ?? 0)}</span>
+        <span className="text-xs text-slate-400">
+          {formatCurrency(totals?.grandTotal ?? 0, cur)}
+          {currencyCaption(currency) ? ` (${currencyCaption(currency)})` : ""}
+        </span>
       </div>
       <div className="h-64">
         {isLoading ? (
@@ -69,7 +78,7 @@ export function BucketDonut({
                   color: "#e2e8f0",
                 }}
                 formatter={(value: number, _name, item) => [
-                  formatCurrency(value),
+                  formatCurrency(value, cur),
                   BUCKET_LABELS[(item?.payload?.bucket ?? "other") as BucketKey],
                 ]}
               />

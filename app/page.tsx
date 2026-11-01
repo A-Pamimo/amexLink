@@ -2,6 +2,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { BucketDonut } from "@/components/BucketDonut";
+import { CurrencySelect } from "@/components/CurrencySelect";
 import { IncomeToggle } from "@/components/IncomeToggle";
 import { ItemFilter } from "@/components/ItemFilter";
 import { KpiTiles } from "@/components/KpiTiles";
@@ -14,6 +15,7 @@ import type { PlaidItem } from "@/lib/types";
 export default function DashboardPage() {
   const [itemId, setItemId] = useState<string | undefined>(undefined);
   const [includeNonSpending, setIncludeNonSpending] = useState(false);
+  const [currency, setCurrency] = useState<string | undefined>(undefined);
   const { data: itemsData } = useSWR<{ items: Omit<PlaidItem, "access_token">[] }>(
     "/api/items"
   );
@@ -40,22 +42,28 @@ export default function DashboardPage() {
         <h1 className="text-xl font-semibold">Dashboard</h1>
         <div className="flex items-center gap-3">
           <IncomeToggle value={includeNonSpending} onChange={setIncludeNonSpending} />
+          <CurrencySelect value={currency} onChange={setCurrency} />
           <ItemFilter value={itemId} onChange={setItemId} />
           <SyncButton itemId={itemId} />
         </div>
       </div>
 
-      <KpiTiles itemId={itemId} />
+      <KpiTiles itemId={itemId} currency={currency} />
 
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-2">
-          <BucketDonut itemId={itemId} includeNonSpending={includeNonSpending} />
+          <BucketDonut
+            itemId={itemId}
+            includeNonSpending={includeNonSpending}
+            currency={currency}
+          />
         </div>
         <div className="lg:col-span-3">
           <MonthlyTrend
             months={6}
             itemId={itemId}
             includeNonSpending={includeNonSpending}
+            currency={currency}
           />
         </div>
       </div>

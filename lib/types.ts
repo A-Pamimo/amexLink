@@ -107,6 +107,19 @@ export interface MonthlyTrendPoint {
   byBucket: BucketTotals;
 }
 
+/** Spending per ISO currency code (`UNKNOWN` when absent). Amounts of different currencies are never added. */
+export interface BucketTotalsByCurrency {
+  byCurrency: Record<string, BucketTotals>;
+  /** Currencies present in the result, CAD first, `UNKNOWN` last. */
+  currencies: string[];
+}
+
+export interface MonthlyTrendByCurrency {
+  /** One series per currency; every series has the same months, oldest first. */
+  byCurrency: Record<string, MonthlyTrendPoint[]>;
+  currencies: string[];
+}
+
 export interface SyncResult {
   added: number;
   modified: number;
