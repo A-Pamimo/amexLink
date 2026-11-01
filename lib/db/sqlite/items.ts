@@ -1,10 +1,18 @@
 import type Database from "better-sqlite3";
+import { decrypt, DecryptError, encrypt } from "../../crypto";
 import type { ItemsRepo, PlaidItemInsert } from "../../db";
+import { TokenUnreadableError } from "../../errors";
+import { log } from "../../log";
 import type { PlaidItem } from "../../types";
 
-// Never `SELECT *` here: the access token must only leave SQL through getItemSecret.
+// Never `SELECT *` here: the token ciphertext must only leave SQL through getItemSecret.
 const ITEM_COLUMNS =
   "id, item_id, institution_name, institution_id, created_at, last_synced_at, cursor";
+
+/** AAD binds the ciphertext to its row; moving it to another item fails to decrypt. */
+function tokenAad(item_id: string): string {
+  return `plaid_items:${item_id}`;
+}
 
 interface ItemRow {
   id: string;
@@ -30,8 +38,8 @@ function rowToItem(row: ItemRow): PlaidItem {
 
 export function itemsRepo(db: Database.Database): ItemsRepo {
   const insertItemStmt = db.prepare(`
-    INSERT INTO plaid_items (id, access_token, item_id, institution_name, institution_id, created_at, last_synced_at, cursor)
-    VALUES (@id, @access_token, @item_id, @institution_name, @institution_id, @created_at, NULL, NULL)
+    INSERT INTO plaid_items (id, access_token_ct, item_id, institution_name, institution_id, created_at, last_synced_at, cursor)
+    VALUES (@id, @access_token_ct, @item_id, @institution_name, @institution_id, @created_at, NULL, NULL)
   `);
   const updateItemSyncStmt = db.prepare(`
     UPDATE plaid_items SET cursor = ?, last_synced_at = ? WHERE item_id = ?
@@ -43,7 +51,7 @@ export function itemsRepo(db: Database.Database): ItemsRepo {
     `SELECT ${ITEM_COLUMNS} FROM plaid_items WHERE item_id = ?`
   );
   const getItemSecretStmt = db.prepare(
-    `SELECT access_token FROM plaid_items WHERE item_id = ?`
+    `SELECT access_token_ct FROM plaid_items WHERE item_id = ?`
   );
   const listItemsStmt = db.prepare(
     `SELECT ${ITEM_COLUMNS} FROM plaid_items ORDER BY created_at DESC`
@@ -64,14 +72,41 @@ export function itemsRepo(db: Database.Database): ItemsRepo {
       const r = getItemByItemIdStmt.get(item_id) as ItemRow | undefined;
       return r ? rowToItem(r) : null;
     },
-    /** The only reader of the access token. Callers must never log or return it. */
+    /**
+     * The only reader of the access token. Decrypts in memory for the caller;
+     * callers must never log or return it. A row whose ciphertext cannot be
+     * opened throws TokenUnreadableError (the item needs a re-link); neither
+     * the log line nor the error carries the ciphertext.
+     */
     async getItemSecret(item_id) {
-      const r = getItemSecretStmt.get(item_id) as { access_token: string } | undefined;
-      return r ? { access_token: r.access_token } : null;
+      const r = getItemSecretStmt.get(item_id) as
+        | { access_token_ct: string | null }
+        | undefined;
+      if (!r) return null;
+      if (r.access_token_ct === null) {
+        log.error("token_decrypt_failed", { item_id, reason: "missing ciphertext" });
+        throw new TokenUnreadableError(item_id);
+      }
+      try {
+        return { access_token: decrypt(r.access_token_ct, tokenAad(item_id)) };
+      } catch (err) {
+        if (err instanceof DecryptError) {
+          log.error("token_decrypt_failed", { item_id, reason: err.message });
+          throw new TokenUnreadableError(item_id);
+        }
+        throw err;
+      }
     },
     async insertItem(item: PlaidItemInsert) {
       const created_at = new Date().toISOString();
-      insertItemStmt.run({ ...item, created_at });
+      insertItemStmt.run({
+        id: item.id,
+        access_token_ct: encrypt(item.access_token, tokenAad(item.item_id)),
+        item_id: item.item_id,
+        institution_name: item.institution_name,
+        institution_id: item.institution_id,
+        created_at,
+      });
       return rowToItem({
         id: item.id,
         item_id: item.item_id,

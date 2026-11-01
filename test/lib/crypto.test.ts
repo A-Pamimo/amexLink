@@ -166,10 +166,14 @@ describe("loadDataKey", () => {
     delete process.env.TOKEN_ENCRYPTION_KEY;
     const key = Buffer.alloc(32, 3);
     process.env.TOKEN_ENCRYPTION_KEY_FILE = tmpFile("key.b64", key.toString("base64") + "\n");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(loadDataKey().equals(key)).toBe(true);
-    expect(decrypt(encrypt("tok", "a"), "a")).toBe("tok");
-    expect(warn).not.toHaveBeenCalled();
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      expect(loadDataKey().equals(key)).toBe(true);
+      expect(decrypt(encrypt("tok", "a"), "a")).toBe("tok");
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("reads 32 raw bytes from TOKEN_ENCRYPTION_KEY_FILE", () => {
@@ -183,13 +187,20 @@ describe("loadDataKey", () => {
     delete process.env.TOKEN_ENCRYPTION_KEY;
     const key = Buffer.alloc(32, 5);
     process.env.TOKEN_ENCRYPTION_KEY_FILE = tmpFile("key.loose", key.toString("base64"), 0o644);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(loadDataKey().equals(key)).toBe(true);
-    resetDataKeyCache(); // force a re-read; the warning flag is reset too
-    loadDataKey();
-    expect(warn).toHaveBeenCalledTimes(2);
-    expect(warn.mock.calls[0][0]).toMatch(/group\/world readable/);
-    expect(warn.mock.calls[0][0]).not.toContain(key.toString("base64"));
+    // lib/log writes warn-level JSON lines to stderr.
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      expect(loadDataKey().equals(key)).toBe(true);
+      resetDataKeyCache(); // force a re-read; the warning flag is reset too
+      loadDataKey();
+      expect(warn).toHaveBeenCalledTimes(2);
+      const line = String(warn.mock.calls[0][0]);
+      expect(line).toContain('"event":"data_key_file_mode"');
+      expect(line).toMatch(/group\/world readable/);
+      expect(line).not.toContain(key.toString("base64"));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("prefers TOKEN_ENCRYPTION_KEY over the file and rejects a bad file", () => {

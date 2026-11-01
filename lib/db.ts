@@ -54,7 +54,11 @@ export interface ItemsRepo {
   getItemById(id: string): Promise<PlaidItem | null>;
   /** Lookup by Plaid's item_id. */
   getItemByItemId(item_id: string): Promise<PlaidItem | null>;
-  /** The only way to read an access token. Never log or return the result. */
+  /**
+   * The only way to read an access token (decrypted from `access_token_ct`).
+   * Never log or return the result. Throws `TokenUnreadableError` (lib/errors)
+   * when the ciphertext cannot be opened; the item then needs a re-link.
+   */
   getItemSecret(item_id: string): Promise<{ access_token: string } | null>;
   /** Returns the stored item WITHOUT the access token. */
   insertItem(item: PlaidItemInsert): Promise<PlaidItem>;

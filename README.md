@@ -40,6 +40,8 @@ All live in `.env.local` (gitignored). `.env.example` documents the full surface
 | `AUTH_PASSWORD` | conditional | string | required when `AUTH_MODE=password` |
 | `TOKEN_ENCRYPTION_KEY` | yes (at server start) | base64 of 32 bytes | AES-256-GCM data key; see [Encryption key](#encryption-key) |
 | `TOKEN_ENCRYPTION_KEY_FILE` | alternative | path | `0600` file holding the base64 key or 32 raw bytes, outside `data/` |
+| `BACKUP_AGE_RECIPIENT` | for `npm run backup` | `age1...` public key | backups are encrypted to it; see [Backups and restore drill](#backups-and-restore-drill) |
+| `AGE_IDENTITY_FILE` | for `npm run restore:check` only | path | age identity (private key). Only on the machine running the restore drill, never on the server |
 
 Validation runs at server startup (`lib/env.ts`). Missing or invalid values throw a clear error before anything tries to talk to Plaid or the DB.
 
@@ -51,6 +53,12 @@ Aggregator access tokens are stored encrypted (AES-256-GCM, `lib/crypto.ts`) und
 - **Store:** in a password manager, and in `.env.local` (mode `0600`) or a `0600` file referenced by `TOKEN_ENCRYPTION_KEY_FILE`. Never in `data/`, never in backups, never in git. The key must not live in the same copy as the database, or a copied `data/` folder is a token leak.
 - **Without it:** the server refuses to start (`lib/boot.ts` → `loadDataKey()`); there is no plaintext fallback. A key that is not exactly 32 bytes is also refused. `next build` does not need the key.
 - **If you lose it:** the stored tokens cannot be decrypted. Delete the affected items and re-link every card. Ciphertext is prefixed with a key version (`v1.`) so a later rotation can decrypt with the old key and re-encrypt with the new one.
+- **At rest:** tokens live in `plaid_items.access_token_ct` only (migration `0004 token_ct` moved them there, dropped the plaintext column, ran `VACUUM` and wrote a `token_migration` row to `security_log`). A row that no longer decrypts raises `TokenUnreadableError` and is logged as `token_decrypt_failed` with the item id only; the card must be re-linked. The DB directory is forced to `0700` and the DB/WAL/SHM files to `0600` on every open.
+- **After upgrading an existing install:** old backups under `data/backups/*.sqlite` still contain plaintext tokens. Destroy them (`npm run backup -- --purge-plaintext`) and run `npm run verify:no-plaintext`, which exits 1 if any file under `data/` still contains a Plaid token prefix.
+
+### Host disk encryption
+
+Full-disk encryption on the host is required. If the host is a VPS and SQLCipher is not used, a snapshot of the running disk exposes transaction and liability text. Token ciphertext stays safe in that case only because the data key is not in the same copy; keep `TOKEN_ENCRYPTION_KEY` out of `data/`, out of backups and out of any cloud-synced folder.
 
 ## Storage modes
 
@@ -126,6 +134,9 @@ lib/
   db/sqlite/{items,transactions,stats,core}.ts   per-area better-sqlite3 repos
   db/migrations/                   NNNN_name.sql files plus code steps in index.ts
   audit.ts                         security_log writer
+  log.ts                           JSON-line logger + redact() (tokens, secrets, cookies, Plaid error bodies)
+  errors.ts                        TokenUnreadableError (token ciphertext cannot be opened -> re-link)
+  crypto.ts                        AES-256-GCM data key core
   boot.ts                          startup config checks (called from instrumentation.ts)
   client/api.ts                    browser fetch wrapper (apiFetch, ApiError)
   plaid.ts                         PlaidApi factory
@@ -133,7 +144,10 @@ lib/
   date.ts, format.ts, id.ts        small helpers
 middleware.ts                      auth gate
 scripts/sync.mjs                   cron-friendly sync trigger
-scripts/backup.mjs                 copies sqlite to data/backups/
+scripts/backup.mjs                 consistent snapshot -> age-encrypted data/backups/*.sqlite.age
+scripts/restore-check.mjs          decrypts a backup to a temp file and opens it read-only (restore drill)
+scripts/verify-no-plaintext.mjs    scans data/ for plaintext Plaid token prefixes
+scripts/log.mjs                    JSON-line logger for the scripts (mirror of lib/log.ts)
 test/                              vitest suites, helpers (loadApp, plaid-fake) and fixtures
 instrumentation.ts                 runs assertBootConfig() when the server starts
 ```
@@ -148,10 +162,38 @@ instrumentation.ts                 runs assertBootConfig() when the server start
 | `npm run lint` | ESLint flat config (`eslint.config.mjs`, `eslint-config-next`) |
 | `npm test` / `npm run test:watch` | vitest (node env, temp SQLite file per test; see `test/helpers/`) |
 | `npm run sync` | hits `/api/plaid/sync` on the running server (auths if `AUTH_PASSWORD` is set); loads `.env.local` via `--env-file-if-exists` |
-| `npm run backup` | copies the sqlite file to `data/backups/amexlens-<timestamp>.sqlite`; loads `.env.local` |
+| `npm run backup` | consistent snapshot of the DB, age-encrypted to `BACKUP_AGE_RECIPIENT`, written to `data/backups/amexlens-<timestamp>.sqlite.age` (mode `0600`, newest 7 kept); `-- --purge-plaintext` also deletes legacy `*.sqlite` backups; refuses to run without a recipient; loads `.env.local` |
+| `npm run restore:check -- <file.age>` | restore drill: decrypts with `AGE_IDENTITY_FILE` to a temp file, opens read-only, prints migration ids + item count, deletes the temp |
+| `npm run verify:no-plaintext [-- <dir>]` | exits 1 (listing file names) if any file under `data/` contains `access-sandbox-`/`access-development-`/`access-production-` |
 | `npm run key:generate` | prints a fresh `TOKEN_ENCRYPTION_KEY=<base64 32 bytes>` line (see [Encryption key](#encryption-key)) |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, `npm audit --audit-level=high` and build on every PR.
+
+## Backups and restore drill
+
+Backups are consistent SQLite snapshots (better-sqlite3 online backup API, correct under WAL) encrypted to an [age](https://age-encryption.org) public key before they touch disk. The snapshot still contains the token ciphertext and all transaction rows, so the plaintext temp file is deleted in a `finally` and only the `.age` file (mode `0600`) remains.
+
+**One-time setup (on your laptop, not on the server):**
+
+```bash
+age-keygen -o amexlens-backup.key          # prints "Public key: age1..."
+chmod 600 amexlens-backup.key
+```
+
+- Put the **public key** in the server's `.env.local` as `BACKUP_AGE_RECIPIENT=age1...`.
+- Keep the **identity file** (`amexlens-backup.key`, the private key) in your password manager and on the machine where you run restore drills. It must not be on the server, under `data/`, or in any folder a cloud-sync tool uploads. The backup job never reads it.
+- Keep `TOKEN_ENCRYPTION_KEY` separate from the backups too: a backup plus the data key equals every token.
+
+**Taking backups:** `npm run backup` (cron it alongside `npm run sync`). The newest 7 `.age` files are kept (`BACKUP_KEEP` to change); output dir is `data/backups/` (`BACKUP_DIR` to change). The script refuses to run without `BACKUP_AGE_RECIPIENT`, so a misconfigured cron cannot write a plaintext copy.
+
+**Restore drill (run once after setup and after any upgrade):**
+
+1. Copy the newest `data/backups/amexlens-<stamp>.sqlite.age` to the machine that holds the identity.
+2. `AGE_IDENTITY_FILE=./amexlens-backup.key npm run restore:check -- amexlens-<stamp>.sqlite.age`
+3. Expect a line like `migrations=1,2,4 items=<n> integrity=ok`. The script decrypts to a `0600` temp file, opens it read-only, prints only those markers, and deletes the temp file.
+4. To actually restore: stop the app first (WAL), decrypt with `age -d -i amexlens-backup.key -o data/amexlens.sqlite <file>.age`, remove any stale `data/amexlens.sqlite-wal` / `-shm`, `chmod 600` the file, start the app. Never overwrite a live DB.
+
+**After the token migration (existing installs):** backups taken before WP3 are plaintext and contain access tokens. Run `npm run backup -- --purge-plaintext` to delete `data/backups/*.sqlite`, destroy any copies elsewhere, then `npm run verify:no-plaintext` to confirm no Plaid token prefix remains under `data/`.
 
 ## Verification
 

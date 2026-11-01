@@ -59,6 +59,7 @@ File map:
 
 - **WP0 (foundation) landed** on branch `wp0-foundation`: lockfile, `next@15.5.28` pinned, Node 22, vitest (`npm test`), CI, DB/client seams.
 - **WP1 (crypto core) landed** on branch `wp1-crypto-core` (stacks on WP0): `lib/crypto.ts` (AES-256-GCM `v1.` ciphertext with AAD, versioned key ring, `constantTimeEqual`/`sha256Hex`/`randomToken`), `npm run key:generate`, boot refuses to start without a 32-byte `TOKEN_ENCRYPTION_KEY`. Tokens are not yet stored encrypted; that is WP3. Still open:
+- **WP3 (at rest) landed** on branch `wp3-at-rest` (stacks on WP1): migration 0004 moves tokens into `access_token_ct` (AAD `plaid_items:<item_id>`) and drops the plaintext column (+ `VACUUM`, audit row), `getItemSecret` throws `TokenUnreadableError` on decrypt failure, DB dir/file modes `0700`/`0600`, `lib/log.ts` redacting JSON logger, age-encrypted consistent backups (`npm run backup`, `restore:check`, `verify:no-plaintext`), boot failure exits 1. Still open:
 - Any Phase 0 security fix beyond the above. Any liabilities/balance code. Cards overview UI. Reminders. Red-team pass. Test coverage beyond the foundation suites. Multi-user / iOS.
 
 ## 5. Security bar (mandatory)
