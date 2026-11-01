@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
 import { refreshItemCards } from "@/lib/cards/refresh";
 import { getCardsResponse } from "@/lib/cards/view";
 import { getDB } from "@/lib/db";
@@ -9,16 +10,17 @@ import { withItemLock } from "@/lib/sync/lock";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// WP2: requireMutation
 // The ONLY path that asks Plaid for a live balance (`/accounts/balance/get`, billed per call).
 // Syncs and cron use the free cached `/accounts/get`. One live refresh per card per 10 minutes.
 const BALANCE_WINDOW_MS = 10 * 60_000;
 const ID = /^[\w-]{1,64}$/;
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
   const { id } = await params;
   if (!ID.test(id)) return apiError(404, "card_not_found");
 

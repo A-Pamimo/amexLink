@@ -2,7 +2,7 @@ import "server-only";
 import { audit } from "../audit";
 import { getDB } from "../db";
 import { extractProviderError } from "../http/errors";
-import { logEvent } from "../http/log-shim";
+import { log } from "../log";
 import { getPlaid } from "../plaid";
 import { withItemLock } from "../sync/lock";
 
@@ -47,7 +47,7 @@ export async function revokeItem(id: string): Promise<RevokeResult> {
       } else {
         const provider_code =
           info.error_code ?? (isCredentialError(err) ? "CREDENTIAL_UNREADABLE" : "UNKNOWN");
-        logEvent("revoke_failed", {
+        log.warn("revoke_failed", {
           item_id,
           error_code: info.error_code,
           error_type: info.error_type,
@@ -66,7 +66,7 @@ export async function revokeItem(id: string): Promise<RevokeResult> {
       // Reclaim pages so deleted rows do not linger in the file.
       await db.vacuum();
     } catch {
-      logEvent("vacuum_failed", { item_id });
+      log.error("vacuum_failed", { item_id });
     }
     await audit("revoke", { item_id, outcome });
     return { ok: true };

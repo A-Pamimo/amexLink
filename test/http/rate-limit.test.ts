@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeApp, loadApp } from "../helpers/app";
 import { installPlaidFake } from "../helpers/plaid-fake";
+import { req } from "../helpers/seed";
 
 beforeEach(async () => {
   const { resetRateLimits } = await import("@/lib/http/rate-limit");
@@ -41,10 +42,10 @@ describe("POST /api/plaid/link-token", () => {
     resetRateLimits();
     const { POST } = await import("@/app/api/plaid/link-token/route");
     for (let i = 0; i < 10; i++) {
-      const ok = await POST();
+      const ok = await POST(req("/api/plaid/link-token", { method: "POST" }));
       expect(ok.status).toBe(200);
     }
-    const res = await POST();
+    const res = await POST(req("/api/plaid/link-token", { method: "POST" }));
     expect(res.status).toBe(429);
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
     expect(await res.json()).toEqual({ error: { code: "rate_limited" } });

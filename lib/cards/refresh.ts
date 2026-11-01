@@ -1,7 +1,7 @@
 import "server-only";
 import { audit } from "../audit";
 import { getDB } from "../db";
-import { logEvent } from "../http/log-shim";
+import { log } from "../log";
 import { getProvider } from "../providers";
 import type { BalanceSource, LiabilitiesStatus } from "../providers/types";
 
@@ -59,7 +59,7 @@ export async function refreshItemCards(
     access_token = secret.access_token;
   } catch {
     // Decrypt failures are handled (status + log) by the sync path; never log the cause here.
-    logEvent("cards_refresh_credential_unreadable", { item_id });
+    log.error("cards_refresh_credential_unreadable", { item_id });
     return failed("credential_unavailable");
   }
 

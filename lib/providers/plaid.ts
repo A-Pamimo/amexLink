@@ -1,6 +1,6 @@
 import "server-only";
 import { extractProviderError } from "../http/errors";
-import { logEvent } from "../http/log-shim";
+import { log } from "../log";
 import { getPlaid } from "../plaid";
 import {
   buildCard,
@@ -49,7 +49,7 @@ async function fetchAccounts(
     } catch (err) {
       const info = extractProviderError(err);
       firstFailure = info.error_code ?? "UNKNOWN";
-      logEvent("balance_realtime_failed", {
+      log.warn("balance_realtime_failed", {
         error_code: info.error_code,
         request_id: info.request_id,
         status: info.status,
@@ -63,7 +63,7 @@ async function fetchAccounts(
     return { accounts: pickAll(res.data.accounts), source: "cached", error_code: null };
   } catch (err) {
     const info = extractProviderError(err);
-    logEvent("accounts_get_failed", {
+    log.warn("accounts_get_failed", {
       error_code: info.error_code,
       request_id: info.request_id,
       status: info.status,
@@ -93,7 +93,7 @@ async function fetchLiabilities(
     return { failure: null, byAccount };
   } catch (err) {
     const info = extractProviderError(err);
-    logEvent("liabilities_get_failed", {
+    log.warn("liabilities_get_failed", {
       error_code: info.error_code,
       error_type: info.error_type,
       request_id: info.request_id,
@@ -140,7 +140,7 @@ export const plaidProvider: CardProvider = {
     } catch (err) {
       // Defensive: pickers never throw, but "never throw out of refresh" is a contract.
       const info = extractProviderError(err);
-      logEvent("provider_refresh_failed", { error_code: info.error_code });
+      log.warn("provider_refresh_failed", { error_code: info.error_code });
       return {
         accounts_fetched: false,
         balance_source: "error",

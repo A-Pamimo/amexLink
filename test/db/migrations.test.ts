@@ -6,19 +6,29 @@ import { closeApp, loadApp } from "../helpers/app";
 afterEach(() => closeApp());
 
 describe("migrations", () => {
-  it("applies every migration in order on a fresh DB (incl. 0004 token_ct and 0005 item_status)", async () => {
+  it("applies every migration in order on a fresh DB (incl. 0003 auth, 0004 token_ct, 0005 item_status, 0006 accounts)", async () => {
     const { dir } = await loadApp();
     const raw = new Database(path.join(dir, "test.sqlite"), { readonly: true });
     const ids = (raw.prepare("SELECT id FROM _migrations ORDER BY id").all() as Array<{ id: number }>).map(
       (r) => r.id
     );
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
-    expect(ids).toEqual(expect.arrayContaining([1, 2, 4, 5]));
+    expect(ids).toEqual(expect.arrayContaining([1, 2, 3, 4, 5, 6]));
 
     const tables = (
       raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
     ).map((r) => r.name);
-    for (const t of ["plaid_items", "transactions", "settings", "security_log"]) {
+    for (const t of [
+      "plaid_items",
+      "transactions",
+      "settings",
+      "security_log",
+      "sessions",
+      "auth_state",
+      "passkeys",
+      "recovery_codes",
+      "auth_challenges",
+    ]) {
       expect(tables).toContain(t);
     }
     raw.close();

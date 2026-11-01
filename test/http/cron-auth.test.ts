@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeApp, loadApp } from "../helpers/app";
+import { makeReq, REQUIRED_ENV } from "../helpers/auth";
 import { installPlaidFake } from "../helpers/plaid-fake";
 import { req, seedItem } from "../helpers/seed";
 
@@ -49,11 +50,83 @@ describe("authorizeSync", () => {
     await loadApp({ CRON_SECRET: SECRET });
     const { authorizeSync } = await import("@/lib/sync/authorize");
     const r = await authorizeSync(post(`/api/plaid/sync?cron_secret=${SECRET}&token=${SECRET}`));
-    expect(r).toEqual({ ok: true, via: "session-pending" });
+    expect(r).toEqual({ ok: true, via: "session" });
   });
 
   it("refuses to boot with a short CRON_SECRET", async () => {
     await expect(loadApp({ CRON_SECRET: "short" })).rejects.toThrow(/CRON_SECRET/);
+  });
+});
+
+describe("authorizeSync with AUTH_MODE=required (WP2 integration)", () => {
+  it("no bearer and no cookie is 401 JSON; a non-token cookie too", async () => {
+    await loadApp({ ...REQUIRED_ENV, CRON_SECRET: SECRET });
+    const { authorizeSync } = await import("@/lib/sync/authorize");
+    for (const r of [
+      await authorizeSync(makeReq("/api/plaid/sync", { method: "POST" })),
+      await authorizeSync(makeReq("/api/plaid/sync", { method: "POST", cookie: "__Host-amexlens_session=ok" })),
+      await authorizeSync(makeReq("/api/plaid/sync", { method: "POST", cookie: "amexlens_auth=ok" })),
+    ]) {
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.response.status).toBe(401);
+        expect(await r.response.json()).toEqual({ error: { code: "unauthenticated" } });
+      }
+    }
+  });
+
+  it("a valid session passes only with the CSRF Origin + custom header (requireMutation)", async () => {
+    await loadApp({ ...REQUIRED_ENV, CRON_SECRET: SECRET });
+    const { authorizeSync } = await import("@/lib/sync/authorize");
+    const { createSession } = await import("@/lib/auth/session");
+    const token = await createSession();
+
+    const ok = await authorizeSync(makeReq("/api/plaid/sync", { method: "POST", token }));
+    expect(ok).toEqual({ ok: true, via: "session" });
+
+    const noHeader = await authorizeSync(makeReq("/api/plaid/sync", { method: "POST", token, csrfHeader: false }));
+    expect(noHeader.ok).toBe(false);
+    if (!noHeader.ok) expect(noHeader.response.status).toBe(403);
+
+    const badOrigin = await authorizeSync(
+      makeReq("/api/plaid/sync", { method: "POST", token, origin: "https://evil.example" })
+    );
+    expect(badOrigin.ok).toBe(false);
+    if (!badOrigin.ok) expect(badOrigin.response.status).toBe(403);
+  });
+
+  it("a presented bearer is still validated strictly and never falls through to the session", async () => {
+    await loadApp({ ...REQUIRED_ENV, CRON_SECRET: SECRET });
+    const { authorizeSync } = await import("@/lib/sync/authorize");
+    const { createSession } = await import("@/lib/auth/session");
+    const token = await createSession();
+
+    // Correct bearer, no cookie, no CSRF headers: cron.
+    const cron = await authorizeSync(
+      makeReq("/api/plaid/sync", { method: "POST", origin: null, csrfHeader: false, headers: { authorization: `Bearer ${SECRET}` } })
+    );
+    expect(cron).toEqual({ ok: true, via: "cron" });
+
+    // Wrong bearer WITH a valid session cookie: 401, the session does not rescue it.
+    const wrong = await authorizeSync(
+      makeReq("/api/plaid/sync", { method: "POST", token, headers: { authorization: "Bearer nope" } })
+    );
+    expect(wrong.ok).toBe(false);
+    if (!wrong.ok) expect(wrong.response.status).toBe(401);
+  });
+
+  it("POST /api/plaid/sync: 401 without credentials, 200 with the cron bearer, 403 for a session without CSRF", async () => {
+    installPlaidFake();
+    const { db } = await loadApp({ ...REQUIRED_ENV, CRON_SECRET: SECRET });
+    await seedItem(db);
+    const { POST } = await import("@/app/api/plaid/sync/route");
+    const { createSession } = await import("@/lib/auth/session");
+
+    expect((await POST(makeReq("/api/plaid/sync", { method: "POST", origin: null, csrfHeader: false }))).status).toBe(401);
+    expect((await POST(post("/api/plaid/sync", { authorization: `Bearer ${SECRET}` }))).status).toBe(200);
+    const token = await createSession();
+    expect((await POST(makeReq("/api/plaid/sync", { method: "POST", token, csrfHeader: false }))).status).toBe(403);
+    expect((await POST(makeReq("/api/plaid/sync", { method: "POST", token }))).status).toBe(200);
   });
 });
 
@@ -91,7 +164,7 @@ describe("POST /api/plaid/sync auth", () => {
     const { db } = await loadApp({ CRON_SECRET: SECRET });
     await seedItem(db);
     const { POST } = await import("@/app/api/plaid/sync/route");
-    // Authenticates as nothing (session-pending), so it is subject to the manual rate limit, not cron's.
+    // Authenticates via the session path (AUTH_MODE=none stand-in), so it is subject to the manual rate limit, not cron's.
     const res = await POST(post(`/api/plaid/sync?secret=${SECRET}`));
     expect(res.status).toBe(200);
     const { rateLimit } = await import("@/lib/http/rate-limit");

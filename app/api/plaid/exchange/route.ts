@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
+import { rotateSessionOnResponse } from "@/lib/auth/session";
 import { getDB } from "@/lib/db";
 import { apiError, extractProviderError, handleProviderError } from "@/lib/http/errors";
-import { logEvent } from "@/lib/http/log-shim";
+import { log } from "@/lib/log";
 import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
 import { newId } from "@/lib/id";
 import { getPlaid, plaidCountryCodes } from "@/lib/plaid";
@@ -21,11 +23,14 @@ async function discardToken(access_token: string, item_id: string): Promise<void
     await getPlaid().itemRemove({ access_token });
   } catch (err) {
     const info = extractProviderError(err);
-    logEvent("exchange_discard_failed", { item_id, error_code: info.error_code, request_id: info.request_id });
+    log.warn("exchange_discard_failed", { item_id, error_code: info.error_code, request_id: info.request_id });
   }
 }
 
 export async function POST(req: Request) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
+
   const limited = rateLimited("exchange", 10, HOUR_MS);
   if (limited) return limited;
 
@@ -68,10 +73,10 @@ export async function POST(req: Request) {
   } catch (err) {
     await discardToken(access_token, item_id);
     if (isUniqueViolation(err)) {
-      logEvent("exchange_duplicate", { item_id });
+      log.warn("exchange_duplicate", { item_id });
       return apiError(409, "already_linked");
     }
-    logEvent("exchange_store_failed", { item_id });
+    log.error("exchange_store_failed", { item_id });
     return apiError(500, "storage_error");
   }
 
@@ -89,7 +94,7 @@ export async function POST(req: Request) {
     }
   } catch (err) {
     const info = extractProviderError(err);
-    logEvent("exchange_institution_failed", {
+    log.warn("exchange_institution_failed", {
       item_id,
       error_code: info.error_code,
       request_id: info.request_id,
@@ -106,10 +111,13 @@ export async function POST(req: Request) {
     sync = { ok: false, code: err instanceof SyncError ? err.code : "sync_failed" };
   }
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     ok: true,
     item_id,
     institution_name: item.institution_name,
     sync,
   });
+  // Linking a card is a sensitive action: rotate the session token (SECURITY.md 3.3).
+  await rotateSessionOnResponse(auth, res);
+  return res;
 }

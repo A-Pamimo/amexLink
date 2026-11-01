@@ -9,6 +9,7 @@ import {
   TOKEN_CT_MIGRATION_ID,
   type MigrationStep,
 } from "../migrations";
+import { authRepo } from "./auth";
 import { cardsRepo } from "./cards";
 import { coreRepo } from "./core";
 import { itemLifecycleRepo, itemsRepo } from "./items";
@@ -159,5 +160,6 @@ export function createSqliteDB(dbPath: string): DB {
     ...statsRepo(db),
     ...core,
     ...cardsRepo(db),
+    ...authRepo(db),
   };
 }

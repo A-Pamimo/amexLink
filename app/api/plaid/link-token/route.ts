@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
 import { handleProviderError } from "@/lib/http/errors";
 import { HOUR_MS, rateLimited } from "@/lib/http/rate-limit";
 import {
@@ -14,7 +15,10 @@ import { getOrCreateClientUserId } from "@/lib/plaid-user";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
+
   const limited = rateLimited("link-token", 10, HOUR_MS);
   if (limited) return limited;
 

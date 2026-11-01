@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireMutation } from "@/lib/auth/guard";
 import { getDB } from "@/lib/db";
 import { ALL_BUCKETS, type BucketKey } from "@/lib/types";
 
@@ -9,6 +10,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
   let body: { bucket?: BucketKey } | null;
   try {
     body = await req.json();
@@ -30,9 +33,11 @@ export async function PATCH(
 
 // DELETE = clear override, recompute auto-bucket.
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireMutation(req);
+  if (!auth.ok) return auth.response;
   const { id } = await params;
   const db = await getDB();
   const updated = await db.resetTransactionBucket(id);
