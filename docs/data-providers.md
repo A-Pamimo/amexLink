@@ -1,9 +1,6 @@
 # Credit-card data providers
 
-> **Salvaged draft (Oct 30, 2026).** Written by a Cursor builder agent that crashed before pushing any code. Vendor facts, prices, dates and the Plaid coverage-file flags are **unverified**: re-check against each vendor's current docs before relying on them. Wherever this file says "this build", "already in the app", or names files such as `0002_card_liabilities.sql`, `lib/webhooks.ts`, or `scripts/verify-sandbox.mjs`, read it as **the design target, not existing code**. None of that code is on `main`. See `HANDOVER.md`.
->
-> **Exception:** the Plaid `/liabilities/get` field list (see the note under the intro and the Plaid column of the field table) was verified against plaid.com/docs/api/products/liabilities on 2026-10-30. Every other vendor fact, and the Canadian institution table, remain unverified.
-
+> **Status (reconciled 2026-10-31, WP8).** Design written Oct 30 2026; implemented across PRs #5 to #23 on the `wp*` chain (`HANDOVER.md` sections 3 and 12); vendor facts verified 2026-10-30 against Plaid docs; the Canadian institution table reflects Plaid's 2026-10-16 coverage CSV (`plaid.com/documents/us_institution_coverage.csv`) and `npm run verify:sandbox -- --coverage ins_...` re-checks it. The Plaid `/liabilities/get` field list, the Link token options (`required_if_supported_products`, `additional_consented_products`, `balance` is not a product), the `ADDITIONAL_CONSENT_REQUIRED` behavior, Trial terms and the Balance/rate-limit facts were checked against Plaid's docs. The Yodlee, MX, Flinks, Finicity, Akoya, Wealthica and Inverite columns are research notes from those vendors' public pages and have not been independently re-verified; re-check one before buying anything. Plaid is the only provider that is built. A Yodlee adapter is **future**. Nothing has been run against a real Plaid environment yet.
 
 Comparison for a single-user, self-hosted dashboard in Toronto. The fields that matter are the ones on the cards overview:
 
@@ -18,7 +15,7 @@ Comparison for a single-user, self-hosted dashboard in Toronto. The fields that 
 - APR (purchase, and the other APR types when the API returns them: balance transfer, cash, penalty, special)
 - overdue flag
 
-**Plaid field list: verified against plaid.com/docs/api/products/liabilities on 2026-10-30** (`/liabilities/get` `liabilities.credit[]`: `account_id`, `aprs[]` of `{ apr_percentage, apr_type, balance_subject_to_apr, interest_charge_amount }`, `is_overdue`, `last_payment_amount`, `last_payment_date`, `last_statement_issue_date`, `last_statement_balance`, `minimum_payment_amount`, `next_payment_due_date`). `apr_type` is one of `balance_transfer_apr`, `cash_apr`, `penalty_apr`, `purchase_apr`, `special`; the public docs page omits `penalty_apr` and `last_statement_issue_date`, but the `plaid` SDK (v46+) returns both. An empty `aprs` array means the issuer supplied no APR. `is_overdue: false` is a real value. Balances come from `/accounts/get` (cached, free) or `/accounts/balance/get` (live, billed per call): `current`, `available`, `limit`, `iso_currency_code`. The Yodlee, MX, Flinks and other-vendor columns, and the Canadian institution table below, are still unverified drafts.
+**Plaid field list: verified against plaid.com/docs/api/products/liabilities on 2026-10-30** (`/liabilities/get` `liabilities.credit[]`: `account_id`, `aprs[]` of `{ apr_percentage, apr_type, balance_subject_to_apr, interest_charge_amount }`, `is_overdue`, `last_payment_amount`, `last_payment_date`, `last_statement_issue_date`, `last_statement_balance`, `minimum_payment_amount`, `next_payment_due_date`). `apr_type` is one of `balance_transfer_apr`, `cash_apr`, `penalty_apr`, `purchase_apr`, `special`; the public docs page omits `penalty_apr` and `last_statement_issue_date`, but the `plaid` SDK (v46+) returns both. An empty `aprs` array means the issuer supplied no APR. `is_overdue: false` is a real value. Balances come from `/accounts/get` (cached, free) or `/accounts/balance/get` (live, billed per call): `current`, `available`, `limit`, `iso_currency_code`. The Canadian institution table below is verified against the coverage CSV; the Yodlee, MX, Flinks and other-vendor columns are research notes (see the status note above).
 
 Utilization is not an issuer field. AmexLens computes it from current balance and credit limit and labels it as computed. Missing issuer fields stay missing. The app does not invent them and does not accept manual overrides.
 
@@ -26,11 +23,11 @@ Sources checked on 30 October 2026. Institution flags for Plaid come from Plaid'
 
 ## Recommendation
 
-**Primary: Plaid Transactions + Liabilities + Balance.** The app already links items through Plaid. `/liabilities/get` returns the credit-card liability object (statement balance, minimum payment, due date, last payment, APR array, `is_overdue`). `/accounts/balance/get` returns real-time `current`, `available` (available credit on credit accounts), and `limit`. Cached balances from `/accounts/get` are the fallback when Balance is not enabled or the live call fails, and the overview marks those as cached.
+**Primary: Plaid Transactions + Liabilities + Balance.** The app already links items through Plaid. `/liabilities/get` returns the credit-card liability object (statement balance, minimum payment, due date, last payment, APR array, `is_overdue`). `/accounts/balance/get` returns real-time `current`, `available` (available credit on credit accounts), and `limit`. Cached balances from `/accounts/get` are what every sync uses, and the overview marks them as cached; the live `/accounts/balance/get` call is made only when the owner presses "Refresh balance" on a card.
 
 Plaid's own Liabilities docs still say Canadian coverage is limited. The October 2026 coverage file is more specific and is what this choice is based on. Liabilities is flagged on for the issuers the owner is most likely to hold, and off for several others. A supported institution can still return nulls for individual fields. The overview shows that per field.
 
-**Fallback, not wired in this build: Yodlee (Envestnet).** It is the only other vendor here whose published account and statement models cover the same liability fields and that documents Canada as a FastLink region. It is enterprise-contracted. The provider interface and the merge function are in place so a Yodlee adapter can fill nulls later without a schema change. Do not buy it unless a connected issuer comes back `not_supported` for liabilities and those cards matter.
+**Fallback, future (not built): Yodlee (Envestnet).** It is the only other vendor here whose published account and statement models cover the same liability fields and that documents Canada as a FastLink region. It is enterprise-contracted. The `CardProvider` interface (`lib/providers/types.ts`) and the merge function (`lib/cards/merge.ts`) are in place so a Yodlee adapter can fill nulls later without a schema change. Do not buy it unless a connected issuer comes back `not_supported` for liabilities and those cards matter.
 
 **Not the liability fallback: Flinks.** Flinks is the strongest Canada-native connection layer and publishes current balance, available balance, and limit for credit accounts. It does not publish statement balance, minimum payment, due date, last payment, or APR. Its Attributes product is cash-flow math and the documented attribute filter only accepts the Operations category, not Credits. Flinks would not fill the fields Plaid leaves empty on a card Plaid can already link.
 
@@ -56,7 +53,7 @@ Finicity's line-of-credit detail is the most explicit US schema in this list and
 
 ## Canadian institutions
 
-Plaid liabilities flag from the 16 October 2026 coverage file (`1` means the institution is listed for the Liabilities product, not that every field is populated):
+Plaid liabilities flag from the 16 October 2026 coverage file (`1` means the institution is listed for the Liabilities product, not that every field is populated; 18 of the 197 Canadian institutions in the file have Liabilities on). Re-check any row with `npm run verify:sandbox -- --coverage ins_100533,ins_39,ins_42` (it downloads the CSV to a temp file and prints the `liabilities`, `balance` and `transactions` flags):
 
 | Institution | Plaid id | Country | Liabilities | Balance | Transactions |
 |---|---|---|---|---|---|
@@ -91,7 +88,7 @@ Other vendors, from their own pages:
 - **Inverite** publishes support for 240+ Canadian institutions for lender bank verification (balances, transactions, income). It is not an ongoing credit-card liability API.
 - **Salt Edge** is a poor fit. A 2026 Canada roundup of vendor pages found only a couple of Canadian connections listed.
 
-Plaid's OAuth guide says OAuth is used by many US institutions and is not currently used by Canadian institutions. That is a general statement, not a per-institution guarantee, and it can change: **whether a given Canadian institution (Amex Canada, RBC, TD, ...) uses OAuth must be probed, not assumed.** The probe is to link it once in the target environment with `PLAID_REDIRECT_URI` registered and set; if Link bounces to the bank and back to `/plaid/oauth`, it uses OAuth. For that reason the app never hardcodes an institution list: it sends `redirect_uri` on every Link token whenever `PLAID_REDIRECT_URI` is set, and `/plaid/oauth` resumes any flow. The redirect URI is certainly required for US OAuth issuers (American Express US, and any US bank card); for a Canadian institution it is needed only if the probe shows OAuth. Sandbox allows `http://localhost` redirect URIs. Production redirect URIs must be HTTPS and must match the dashboard allowlist exactly, with no query string and no hash.
+Plaid's OAuth guide says OAuth is used by many US institutions and is not currently used by Canadian institutions. That is a general statement, not a per-institution guarantee, and it can change: **whether a given Canadian institution (Amex Canada, RBC, TD, ...) uses OAuth must be probed, not assumed.** The probe is to link it once in the target environment with `PLAID_REDIRECT_URI` registered and set; if Link bounces to the bank and back to `/plaid/oauth`, it uses OAuth. For that reason the app never hardcodes an institution list: it sends `redirect_uri` on every Link token whenever `PLAID_REDIRECT_URI` is set, and `/plaid/oauth` resumes any flow. The redirect URI is certainly required for US OAuth issuers (American Express US, and any US bank card); for a Canadian institution it is needed only if the probe shows OAuth. The app refuses to boot if `PLAID_REDIRECT_URI` is not on `APP_ORIGIN`, because the Link token is held in that origin's `sessionStorage`. Sandbox allows `http://localhost` redirect URIs. Production redirect URIs must be HTTPS and must match the dashboard allowlist exactly, with no query string and no hash.
 
 ## Access, consent, and cost for one developer
 
@@ -110,12 +107,13 @@ Plaid's OAuth guide says OAuth is used by many US institutions and is not curren
 
 Least privilege. The Link token requests only what the overview and the existing transaction features need.
 
-- `products`: `transactions` only. Transactions stay the required product so an issuer that cannot do Liabilities can still link, and the spending pages keep working.
+- `products`: `transactions` only. Transactions stay the required product so an issuer that cannot do Liabilities can still link, and the spending pages keep working. `account_filters` restricts Link to credit cards (`credit: { account_subtypes: ["credit card"] }`; SDK enum `CreditAccountSubtype.CreditCard`), and `assertLeastPrivilege()` refuses to boot if any product list widens.
 - `required_if_supported_products`: `liabilities`. If the institution supports it, Plaid collects consent and initializes it, and the owner cannot opt out of it at an OAuth screen and still finish Link. If the institution does not support it, Link still succeeds.
 - `balance` is not a legal `products` value. Plaid initializes Balance consent with the other products. `/accounts/balance/get` is a separate billed call and has to be enabled on the dashboard. The adapter falls back to `/accounts/get` (cached) and records `balance_source`.
 - Not requested: Auth, Identity, Investments, Statements, Transfer, Signal. Those would widen consent and, for Auth or Identity, add products this app does not use.
 - Update mode for an item that was linked before Liabilities existed: Link token with `access_token` and `additional_consented_products: ["liabilities"]`, and no `products` array. That is the documented way to add consent under Data Transparency Messaging. The access token does not change.
-- Country codes stay `US,CA` (`PLAID_COUNTRY_CODES`).
+- Country codes default to `CA` (`PLAID_COUNTRY_CODES`); set `US,CA` explicitly only for a US-issued card.
+- `client_user_id` is a random per-install id, not a name or email. No `webhook` is sent: sync is pull-only.
 - `redirect_uri` is sent only when `PLAID_REDIRECT_URI` is set.
 
 ### Balance policy
