@@ -45,6 +45,7 @@ All live in `.env.local` (gitignored). `.env.example` documents the full surface
 | `BACKUP_AGE_RECIPIENT` | for `npm run backup` | `age1...` public key | backups are encrypted to it; see [Backups and restore drill](#backups-and-restore-drill) |
 | `AGE_IDENTITY_FILE` | for `npm run restore:check` only | path | age identity (private key). Only on the machine running the restore drill, never on the server |
 | `CRON_SECRET` | no | string, >= 32 chars | bearer secret for `npm run sync` (see [Cron](#cron)); the server refuses to start if it is set but shorter |
+| `ENABLE_HSTS` | no | `0` \| `1` | default `0`; set `1` only behind HTTPS |
 
 Validation runs at server startup (`lib/env.ts`). Missing or invalid values throw a clear error before anything tries to talk to Plaid or the DB.
 
@@ -62,6 +63,14 @@ Aggregator access tokens are stored encrypted (AES-256-GCM, `lib/crypto.ts`) und
 ### Host disk encryption
 
 Full-disk encryption on the host is required. If the host is a VPS and SQLCipher is not used, a snapshot of the running disk exposes transaction and liability text. Token ciphertext stays safe in that case only because the data key is not in the same copy; keep `TOKEN_ENCRYPTION_KEY` out of `data/`, out of backups and out of any cloud-synced folder.
+
+## Security headers
+
+`next.config.mjs` applies the headers from `docs/SECURITY.md` 3.10 to every response (built in `lib/security-headers.mjs`): a Content-Security-Policy limited to this origin plus Plaid Link (`cdn.plaid.com`) and the Plaid API host for the configured `PLAID_ENV`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, a locked-down `Permissions-Policy`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (issuer OAuth popups), and `Cross-Origin-Resource-Policy: same-origin`. `Cache-Control: no-store` is set on `/api/*` and HTML routes. `Cross-Origin-Embedder-Policy` is never set because it breaks Plaid Link.
+
+`Strict-Transport-Security` is sent only when `ENABLE_HSTS=1`. Enable it only when the app is served over HTTPS; browsers cache it for a year.
+
+Known deviation: `script-src` still includes `'unsafe-inline'` because Next.js emits inline bootstrap scripts and there is no per-request nonce yet. A follow-up (WP5b) adds a middleware nonce and removes it. In `next dev` the policy also allows `'unsafe-eval'` and localhost websockets for HMR.
 
 ## Storage modes
 
