@@ -7,15 +7,25 @@
 
 export const REQUEST_HEADER = "X-AmexLens-Request";
 
+/** One entry of a bulk-action `results` array (e.g. DELETE /api/data). Ids and short codes only. */
+export interface ItemResult {
+  item_id: string;
+  ok: boolean;
+  code?: string;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /** Sanitised per-item results when the error body carries them (revoke_incomplete). */
+  readonly results?: ItemResult[];
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, results?: ItemResult[]) {
     super(`Request failed (${code})`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    if (results) this.results = results;
   }
 }
 
@@ -33,6 +43,24 @@ function extractCode(body: unknown, status: number): string {
     }
   }
   return fallback;
+}
+
+/** Keeps only { item_id, ok, code } with short token-like strings from a `results` array. */
+export function extractResults(body: unknown): ItemResult[] | undefined {
+  const raw = body && typeof body === "object" ? (body as { results?: unknown }).results : undefined;
+  if (!Array.isArray(raw)) return undefined;
+  const out: ItemResult[] = [];
+  for (const r of raw.slice(0, 100)) {
+    if (!r || typeof r !== "object") continue;
+    const { item_id, ok, code } = r as Record<string, unknown>;
+    if (typeof item_id !== "string" || !SAFE_CODE.test(item_id) || typeof ok !== "boolean") continue;
+    out.push({
+      item_id,
+      ok,
+      ...(typeof code === "string" && SAFE_CODE.test(code) ? { code } : {}),
+    });
+  }
+  return out;
 }
 
 export async function apiFetch<T = unknown>(
@@ -64,7 +92,7 @@ export async function apiFetch<T = unknown>(
       // Already on /login: a 401 there is a failed sign-in, not an expired session.
       window.location.assign("/login");
     }
-    throw new ApiError(res.status, extractCode(body, res.status));
+    throw new ApiError(res.status, extractCode(body, res.status), extractResults(body));
   }
   return body as T;
 }

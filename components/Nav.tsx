@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { apiFetch, errorMessage } from "@/lib/client/api";
 
 const tabs = [
-  { href: "/", label: "Dashboard" },
+  { href: "/", label: "Cards" },
+  { href: "/spending", label: "Spending" },
   { href: "/transactions", label: "Transactions" },
   { href: "/settings", label: "Settings" },
 ];

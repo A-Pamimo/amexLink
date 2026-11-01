@@ -46,6 +46,29 @@ describe("apiFetch", () => {
     expect(errorMessage("Sync failed", err)).toBe("Sync failed (rate_limited)");
   });
 
+  it("keeps only sanitised per-item results from a bulk-action error (revoke_incomplete)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          error: { code: "revoke_incomplete" },
+          results: [
+            { item_id: "item-a", ok: true },
+            { item_id: "item-b", ok: false, code: "INTERNAL_SERVER_ERROR", error_message: "leak access-sandbox-1" },
+            { item_id: "has spaces and <script>", ok: true },
+            { ok: true },
+          ],
+        },
+        502
+      )
+    );
+    const err = (await apiFetch("/api/data", { method: "DELETE" }).catch((e) => e)) as ApiError;
+    expect(err.code).toBe("revoke_incomplete");
+    expect(err.results).toEqual([
+      { item_id: "item-a", ok: true },
+      { item_id: "item-b", ok: false, code: "INTERNAL_SERVER_ERROR" },
+    ]);
+  });
+
   it("maps { error: string } and falls back to http_<status>", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "invalid json" }, 400));
     expect(await apiFetch("/a").catch((e) => e)).toMatchObject({ status: 400, code: "invalid json" });

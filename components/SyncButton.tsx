@@ -37,6 +37,7 @@ export function SyncButton({ itemId }: { itemId?: string }) {
           (k.startsWith("/api/stats/") ||
             k.startsWith("/api/transactions") ||
             k === "/api/items" ||
+            k === "/api/cards" ||
             k === "/api/system")
       );
     } catch (err) {

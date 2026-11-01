@@ -13,6 +13,7 @@ import { authRepo } from "./auth";
 import { cardsRepo } from "./cards";
 import { coreRepo } from "./core";
 import { itemLifecycleRepo, itemsRepo } from "./items";
+import { maintenanceRepo } from "./maintenance";
 import { statsRepo } from "./stats";
 import { transactionsRepo } from "./transactions";
 
@@ -161,5 +162,6 @@ export function createSqliteDB(dbPath: string): DB {
     ...core,
     ...cardsRepo(db),
     ...authRepo(db),
+    ...maintenanceRepo(db),
   };
 }
