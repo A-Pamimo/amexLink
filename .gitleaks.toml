@@ -1,0 +1,11 @@
+# gitleaks configuration, used by .github/workflows/security-scans.yml.
+# Extends the default rule set and adds one narrow allowlist for a test fixture.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixed, labelled dummy values used only by the test suite"
+# test/setup.ts sets a fixed TOKEN_ENCRYPTION_KEY so unit tests can exercise the
+# AES-GCM code paths. Its value is base64("amexlens-test-key-0123456789abcd"),
+# not a secret. Full-history (scheduled) scans flagged it as generic-api-key.
+paths = ['''^test/setup\.ts$''']
