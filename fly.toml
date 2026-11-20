@@ -1,0 +1,59 @@
+# Fly.io configuration for AmexLens (runbook: docs/deploy/fly.md).
+#
+# RENAMING THE APP: the name must be globally unique on Fly. Change it in THREE
+# places in this file, together, and register the new redirect URI in Plaid:
+#   1. `app`
+#   2. `APP_ORIGIN`          (https://<app>.fly.dev)
+#   3. `PLAID_REDIRECT_URI`  (https://<app>.fly.dev/plaid/oauth)
+# Boot refuses to start if PLAID_REDIRECT_URI is not on APP_ORIGIN. Also pass
+# FLY_APP=<app> to scripts/fly/*.sh.
+#
+# NO SECRETS in this file. TOKEN_ENCRYPTION_KEY, CRON_SECRET, AUTH_SETUP_TOKEN,
+# PLAID_CLIENT_ID, PLAID_SECRET and optional BACKUP_AGE_RECIPIENT are Fly secrets.
+#
+# SINGLE MACHINE ONLY: SQLite is a single-writer file on one volume, and the
+# lockout and rate-limit counters live in process memory. Never scale past one
+# machine (deploy with --ha=false; do not run `fly scale count 2`).
+
+app = "amexlens-wedge"
+primary_region = "yyz"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  STORAGE = "sqlite"
+  DB_PATH = "/data/amexlens.sqlite"
+  PLAID_ENV = "sandbox"
+  PLAID_COUNTRY_CODES = "CA"
+  AUTH_MODE = "required"
+  APP_ORIGIN = "https://amexlens-wedge.fly.dev"
+  PLAID_REDIRECT_URI = "https://amexlens-wedge.fly.dev/plaid/oauth"
+  ENABLE_HSTS = "1"
+  COOKIE_INSECURE_DEV = "0"
+
+[[mounts]]
+  source = "amexlens_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # The machine stops when idle and the Fly proxy starts it on the next request.
+  # The daily sync machine (scripts/fly/schedule-sync.sh) wakes it through the edge.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
