@@ -1,0 +1,16 @@
+# Build context exclusions. Nothing the Dockerfile COPYs or builds from is listed here:
+# it needs package*.json, app/, components/, lib/, scripts/, middleware.ts, instrumentation.ts,
+# next.config.mjs and the TS/Tailwind/PostCSS configs.
+node_modules
+.next
+data
+coverage
+test
+docs
+.github
+.claude
+.env*
+!.env.example
+*.tsbuildinfo
+npm-debug.log*
+fly.toml
