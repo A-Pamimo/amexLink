@@ -83,6 +83,7 @@ Superseded and closed PRs: #6, #8, #11, #12, #14, #19, #20 (their work is in the
 
 ## 4. What is NOT done
 
+- **Fly.io deployment config landed (PR)**: `Dockerfile`, `fly.toml`, `.github/workflows/fly-deploy.yml`, `scripts/fly/`, `docs/deploy/fly.md`. Not yet deployed; the first `fly deploy` is the build proof.
 - **Nothing is merged to `main`.** `main` is still the original Transactions-only app. Merge the stack in order (section 9).
 - **No real Plaid run.** All Plaid behavior is tested against fixtures and fakes. The sandbox run (`npm run verify:sandbox -- --coverage ins_100533`, then the full browser flow) and a Trial/Production run with real cards have not happened; no keys are in CI.
 - **Browser verification still owed:** Plaid Link under the nonce CSP (script, frame and connect hosts), and the issuer OAuth popup under `Cross-Origin-Opener-Policy: same-origin-allow-popups` through `/plaid/oauth`. Also a passkey on a real authenticator over https with the production hostname.
@@ -137,6 +138,7 @@ Still open (owner):
 - [ ] First-run setup: start the app, open `/login`, paste the setup token, scan the TOTP QR, save the 10 recovery codes, add a passkey (needs a hostname origin). Then delete or rotate `AUTH_SETUP_TOKEN`.
 - [ ] Do the browser checks in section 4: link a sandbox card through Plaid Link under the CSP (watch the console), and one OAuth institution through `/plaid/oauth`.
 - [ ] Deploy per README "Deployment": bind `127.0.0.1`, TLS at the proxy, HSTS, systemd hardening, full-disk encryption, backups copied off the box, Tailscale or a proxy-level per-IP limit on `/api/auth/login/*`. Run `npm run backup && npm run restore:check` once with the real identity.
+- [ ] Fly.io (`docs/deploy/fly.md`): run `scripts/fly/provision.sh`; add `PLAID_CLIENT_ID`, `PLAID_SECRET`, `AUTH_SETUP_TOKEN` (32+ chars) and optional `BACKUP_AGE_RECIPIENT` as Fly secrets yourself; add the repository secret `FLY_API_TOKEN` (deploy token scoped to the app); register `https://amexlens-wedge.fly.dev/plaid/oauth` in the Plaid dashboard; deploy, then run `scripts/fly/schedule-sync.sh` and copy `TOKEN_ENCRYPTION_KEY` into a password manager once.
 - [ ] Decide the open decisions in section 8.
 - [ ] Optional: share a PC folder via Remote Control (Claude desktop app, Settings, Claude Code, Remote Control, or `claude remote-control` in the folder) if you want a Claude session to exercise Plaid Link in a real local browser.
 - [ ] Optional: make the CI jobs required checks in the repository settings.

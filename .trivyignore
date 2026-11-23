@@ -1,0 +1,6 @@
+# Dockerfile "image user should not be root": the runtime image starts as root only so
+# scripts/docker-entrypoint.sh can chown the Fly volume, then execs the app as uid 1001
+# via setpriv. See Dockerfile and docs/deploy/fly.md.
+DS-0002
+AVD-DS-0002
+DS002
