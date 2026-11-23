@@ -60,6 +60,8 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           ignore-unfixed: true
+          # Without this, SARIF output ignores `severity` and any LOW/MEDIUM finding fails the job.
+          limit-severities-for-sarif: true
           # SCA + IaC + secrets in one shot.
           scanners: vuln,secret,misconfig
       - name: Upload SARIF
