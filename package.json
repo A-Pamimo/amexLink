@@ -28,7 +28,7 @@
     "age-encryption": "^0.3.1",
     "better-sqlite3": "^13.0.3",
     "date-fns": "^4.4.0",
-    "next": "15.5.28",
+    "next": "15.5.29",
     "plaid": "^49.0.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
