@@ -34,6 +34,9 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice::FLY_API_TOKEN is not set; skipping deploy. See docs/deploy/fly.md."
           fi
+      # The job only runs for a `ci` success on main (or a manual dispatch), so the checked-out
+      # head_sha is trusted main code, not a fork PR; no secrets are exposed to an untrusted ref.
+      # nosemgrep: yaml.github-actions.security.workflow-run-target-code-checkout.workflow-run-target-code-checkout
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         if: steps.token.outputs.present == 'true'
         with:

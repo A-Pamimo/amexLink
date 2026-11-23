@@ -77,4 +77,7 @@ RUN chmod 0755 /app/scripts/docker-entrypoint.sh \
 # Fly mounts the volume at /data (root-owned); the entrypoint fixes ownership, then drops privileges.
 VOLUME ["/data"]
 EXPOSE 3000
+# No USER directive on purpose: the entrypoint must chown the root-owned volume, then it
+# execs the server as uid 1001 via setpriv. Same reason for DS-0002 in .trivyignore.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/scripts/docker-entrypoint.sh"]
