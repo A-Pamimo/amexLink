@@ -117,7 +117,7 @@ Superseded and closed PRs: #6, #8, #11, #12, #14, #19, #20 (their work is in the
 
 Resolved:
 
-1. **Personal-only** (not App Store). Phase 4 stays closed unless this changes. Publishing would imply multi-user accounts and tenant isolation, a hosted backend (Postgres, not local SQLite), an iOS client, an Apple Developer **organization** account for World's Edge Group (US$99/yr, needs a free D-U-N-S number), aggregator **production** approval, privacy policy/terms/data deletion, **PIPEDA** compliance, App Store privacy labels and a reviewer demo account.
+1. **Changed 2026-11-24: native mobile app (iOS + Android), personal now, public App Store later.** Replaces "personal-only". The Fly backend stays: Plaid secrets and access tokens cannot live on a phone. Plan: (1) deploy the backend on Fly; (2) bearer-token sign-in for the app (done, SECURITY.md 3.3 "Bearer sessions"); (3) user-scope every table while still single-user, so going public is not a rewrite; (4) Expo / React Native app with the Plaid mobile SDK, biometric unlock and secure token storage; (5) push reminders; (6) TestFlight / Android install. Publishing publicly later still implies multi-user accounts and tenant isolation, a hosted backend (Postgres, not local SQLite), an iOS client, an Apple Developer **organization** account for World's Edge Group (US$99/yr, needs a free D-U-N-S number), aggregator **production** approval, privacy policy/terms/data deletion, **PIPEDA** compliance, App Store privacy labels and a reviewer demo account.
 2. **Auth: TOTP and passkey**, with recovery codes. No password.
 3. **Primary provider: Plaid.**
 

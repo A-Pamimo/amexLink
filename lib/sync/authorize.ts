@@ -1,5 +1,7 @@
 import "server-only";
 import { requireMutation } from "../auth/guard";
+import { authMode } from "../auth/mode";
+import { bearerTokenFromRequest } from "../auth/session";
 import { constantTimeEqual } from "../crypto";
 import { env } from "../env";
 import { apiError } from "../http/errors";
@@ -17,7 +19,9 @@ const BEARER = /^Bearer\s+(\S+)$/i;
  *   access logs and history, so it is ignored), compared in constant time, and only when
  *   CRON_SECRET is configured (>= 32 chars, enforced in lib/env.ts). A presented bearer is
  *   always validated strictly, in every AUTH_MODE; a wrong or unconfigured one is 401, never
- *   a fall-through to the session path.
+ *   a fall-through to the AUTH_MODE=none stand-in.
+ * - A bearer that is not CRON_SECRET but is session-token shaped: the native app's bearer
+ *   session (`requireMutation`, which needs a live `bearer` row). Only with AUTH_MODE=required.
  * - No bearer: a valid browser session plus the mutation CSRF checks (Origin / Referer must
  *   match APP_ORIGIN and `X-AmexLens-Request` must be present), i.e. `requireMutation`.
  *   Under AUTH_MODE=none that stand-in always succeeds.
@@ -29,10 +33,12 @@ export async function authorizeSync(req: Request): Promise<SyncAuthz> {
   if (header !== null) {
     const presented = BEARER.exec(header.trim())?.[1];
     const secret = env.CRON_SECRET;
-    if (!presented || !secret || !constantTimeEqual(presented, secret)) {
+    if (presented && secret && constantTimeEqual(presented, secret)) {
+      return { ok: true, via: "cron" };
+    }
+    if (authMode() !== "required" || !bearerTokenFromRequest(req)) {
       return { ok: false, response: apiError(401, "unauthenticated") };
     }
-    return { ok: true, via: "cron" };
   }
 
   const session = await requireMutation(req);

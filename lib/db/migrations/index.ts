@@ -67,7 +67,7 @@ function tokenCtUp(db: Database.Database): string {
  * `.sql` files in this directory are auto-discovered and merged with these,
  * sorted by id. Ids must not collide; they are never renumbered.
  * Reserved: 0003 auth (WP2), 0004 token_ct (WP3), 0005 item_status (WP4),
- * 0006 card_liabilities (WP6a).
+ * 0006 card_liabilities (WP6a), 0007 session_kind (mobile bearer sessions).
  */
 export const steps: MigrationStep[] = [
   { id: TOKEN_CT_MIGRATION_ID, name: "token_ct", up: tokenCtUp },

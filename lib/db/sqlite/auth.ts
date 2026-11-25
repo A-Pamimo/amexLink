@@ -46,11 +46,11 @@ function rowToPasskey(r: PasskeyDbRow): PasskeyRow {
 export function authRepo(db: Database.Database): AuthRepo {
   // sessions
   const createSessionStmt = db.prepare(`
-    INSERT INTO sessions (id, created_at, last_seen_at, expires_at)
-    VALUES (@id, @created_at, @last_seen_at, @expires_at)
+    INSERT INTO sessions (id, created_at, last_seen_at, expires_at, kind)
+    VALUES (@id, @created_at, @last_seen_at, @expires_at, @kind)
   `);
   const getSessionStmt = db.prepare(
-    `SELECT id, created_at, last_seen_at, expires_at FROM sessions WHERE id = ?`
+    `SELECT id, created_at, last_seen_at, expires_at, kind FROM sessions WHERE id = ?`
   );
   const touchSessionStmt = db.prepare(`UPDATE sessions SET last_seen_at = ? WHERE id = ?`);
   const deleteSessionStmt = db.prepare(`DELETE FROM sessions WHERE id = ?`);

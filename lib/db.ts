@@ -176,12 +176,16 @@ export interface CardsRepo {
 // --- WP2: auth ---------------------------------------------------------------
 
 export interface SessionRow {
-  /** sha256Hex(raw cookie token). The raw token is never stored. */
+  /** sha256Hex(raw session token). The raw token is never stored. */
   id: string;
   created_at: string;
   last_seen_at: string;
   expires_at: string;
+  /** `cookie` (browser) or `bearer` (native app). Fixed at creation, checked on every request. */
+  kind: SessionKind;
 }
+
+export type SessionKind = "cookie" | "bearer";
 
 export interface AuthStateRow {
   /** AES-256-GCM ciphertext (lib/crypto encrypt, AAD "auth_state:totp"), or null. */
