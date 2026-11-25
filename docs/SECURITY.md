@@ -295,12 +295,27 @@ No password mode exists as built (`AUTH_PASSWORD` is gone; sign-in is TOTP, pass
 - Logout deletes the session row. A copied cookie dies with the row.
 - Middleware redirects browsers to `/login` (built on `APP_ORIGIN`, RT-09). Handlers return **401 JSON** for `/api/*` when the session is missing or unknown, and so does middleware. A redirect of an API call is not an auth check (the pre-fix `middleware.ts` redirected everything, including API routes).
 
+**Bearer sessions (native mobile app)**
+
+The iOS/Android app cannot hold a cookie the way a browser does, so it uses a second session transport (`lib/auth/session.ts`, migration 0007):
+
+- Sign-in (TOTP, recovery code, passkey, first-run setup) with `X-AmexLens-Client: mobile` mints a `bearer` session and returns the raw token in the `X-AmexLens-Session-Token` response header (expiry in `X-AmexLens-Session-Expires`), never as a cookie and never in the body. The app keeps it in the Keychain / Android Keystore behind a biometric unlock and sends `Authorization: Bearer <token>`.
+- Same token rules as the cookie: 256 random bits, only `sha256` stored, logout deletes the row, `DELETE /api/auth/sessions` deletes every row of both kinds.
+- The row's `kind` is fixed at creation and checked on every request. A cookie token presented as a bearer, or a bearer token presented as a cookie, is 401. If an `Authorization` header is present it is the only credential considered; a malformed one is 401 even with a valid cookie.
+- Lifetimes: **30 days absolute, 7 days idle** (cookie: 12 h / 2 h). Longer because the phone adds its own biometric lock and secure storage; a lost phone is handled by "sign out everywhere" from any other session.
+- Rotation on link / disconnect / delete-all returns the new token in `X-AmexLens-Session-Token`; the old one dies. A mobile sign-in that presents a bearer rotates it.
+- Middleware lets a session-shaped bearer through to `/api/*` only (never pages); the handler's `requireSession` is the check.
+- `POST /api/plaid/sync`: `CRON_SECRET` is compared first (constant time); a non-matching, session-shaped bearer is checked as a bearer session, only under `AUTH_MODE=required`. Anything else is 401.
+- Passkeys from the app: iOS assertions carry the `https://<RP ID>` origin and verify unchanged once the app has an associated domain. Android assertions carry an `android:apk-key-hash:` origin that the verifier does not accept yet (future work); TOTP and recovery codes work on both platforms.
+
 **CSRF**
 
 SameSite=Lax blocks the classic cross-site form POST. Keep it, and add both of:
 
 - For every state-changing route, `Origin` (or `Referer` if Origin is absent) must match the configured app origin. Missing both → 403.
 - A custom header such as `X-AmexLens-Request: 1` on those routes. Browsers will not attach it to a simple cross-site form.
+
+Bearer sessions skip both checks (`requireMutation`): a browser never attaches an `Authorization` header by itself, so a request carrying a valid bearer was built by the token holder. Cookie sessions always get both checks, whatever other headers they send. On pre-session routes (sign-in, setup, logout) a request marked `X-AmexLens-Client: mobile` skips only the `Origin` check (the app sends none) and still needs `X-AmexLens-Request`; both are custom headers a cross-site page cannot send without a CORS preflight, which the app never answers, and the resulting token goes back to the caller in a header, not into a cookie, so there is no login CSRF.
 
 Webhook routes do not use the session and do not use this header. They use signature verification.
 
@@ -586,6 +601,7 @@ Tally: 49 original rows, **43 ticked, 3 deferred, 3 N/A**; four further deferred
 - [x] Cookie is `__Host-amexlens_session`; `Secure`; `HttpOnly`; `SameSite=Lax`; `Path=/`. — `lib/auth/cookie.ts` (the dev-only `COOKIE_INSECURE_DEV=1` drops the prefix, refused when `PLAID_ENV=production`)
 - [x] Idle and absolute timeouts are enforced. Logout deletes the server row. A second browser's cookie stops working. — `lib/auth/session.ts` (12 h absolute, 2 h idle), `test/auth/session.test.ts`, `test/e2e/session.e2e.ts`
 - [x] Every state-changing handler checks `Origin` and a custom header. — `lib/auth/guard.ts` `requireMutation` / `assertCsrf`, `test/auth/csrf.test.ts`, `test/e2e/csrf.e2e.ts`
+- [x] Native-app bearer sessions: token only in a response header, hash-only storage, `kind` bound to the transport, 30 d / 7 d lifetimes, rotation, logout and sign-out-everywhere; CSRF skipped only for a valid bearer, never for a cookie. — `lib/auth/session.ts`, `lib/auth/guard.ts`, `lib/sync/authorize.ts`, `middleware.ts`, `test/auth/bearer.test.ts`, `test/e2e/bearer.e2e.ts`
 - [x] Unauthenticated `/api/*` returns 401 JSON and does not redirect to HTML. — `middleware.ts` and every handler, `test/e2e/routes-401.e2e.ts`
 - [x] Each handler that reads or writes financial data or tokens checks the session itself, including if middleware is skipped. — `requireSession` / `requireMutation` / `authorizeSync` / `authorizeSetup` as the first statement of each handler, `test/auth/routes-401.test.ts` (calls every handler without middleware)
 - [x] Login `from` is an allowlisted relative path. — `lib/auth/from.ts` `safeFrom`, `test/auth/from.test.ts`
@@ -718,3 +734,4 @@ What the system still does not protect against, and what the owner must do about
 15. **Fly.io binds `0.0.0.0` inside the VM** (`scripts/docker-entrypoint.sh`), not loopback. Only the Fly proxy (TLS terminator) and the app's private network reach the microVM, but the code half of 3.9's loopback control does not apply there (`docs/deploy/fly.md`).
 16. **The sync bearer travels over public TLS to the Fly edge.** The scheduled machine posts `CRON_SECRET` to the public `fly.dev` origin, the only route that wakes an auto-stopped machine. The secret is dedicated and rotatable.
 17. **Fly volume snapshots contain plaintext transaction rows.** Only tokens and the TOTP secret are column-encrypted (item 7); snapshots are encrypted at rest by Fly and the data key is a secret, not on the volume.
+18. **A bearer token lives 30 days on the phone.** It is protected by the platform keystore and the app's biometric lock, not by the browser's HttpOnly cookie jar. A stolen unlocked phone or a compromised app build can use it until it expires or "sign out everywhere" runs. Android passkey sign-in is not supported yet (TOTP and recovery codes are).

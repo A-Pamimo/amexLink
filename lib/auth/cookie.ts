@@ -37,6 +37,35 @@ export function looksLikeSessionToken(value: string | undefined | null): value i
   return typeof value === "string" && TOKEN_RE.test(value);
 }
 
+/**
+ * Native-app (bearer) sessions. The mobile app sends `X-AmexLens-Client: mobile` on sign-in and
+ * gets its token back in the `X-AmexLens-Session-Token` response header instead of a cookie; it
+ * then presents `Authorization: Bearer <token>` on every API call.
+ */
+export const MOBILE_CLIENT_HEADER = "X-AmexLens-Client";
+export const MOBILE_CLIENT_VALUE = "mobile";
+export const SESSION_TOKEN_HEADER = "X-AmexLens-Session-Token";
+export const SESSION_EXPIRES_HEADER = "X-AmexLens-Session-Expires";
+
+const BEARER_RE = /^Bearer\s+(\S+)$/i;
+
+/**
+ * What the `Authorization` header holds: absent, a session-token-shaped bearer, or anything
+ * else (malformed, wrong scheme, a non-session secret such as CRON_SECRET).
+ */
+export function parseAuthorization(
+  header: string | null
+): { kind: "absent" } | { kind: "session"; token: string } | { kind: "other" } {
+  if (header === null) return { kind: "absent" };
+  const presented = BEARER_RE.exec(header.trim())?.[1];
+  return looksLikeSessionToken(presented) ? { kind: "session", token: presented } : { kind: "other" };
+}
+
+/** True when the caller identifies as the native app (exact header value). */
+export function isMobileClient(headers: Headers): boolean {
+  return headers.get(MOBILE_CLIENT_HEADER) === MOBILE_CLIENT_VALUE;
+}
+
 /** Serialise a Set-Cookie header value for the session cookie. */
 export function serializeSessionCookie(
   name: string,

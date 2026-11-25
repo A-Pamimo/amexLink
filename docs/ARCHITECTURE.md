@@ -272,13 +272,15 @@ First run: `AUTH_SETUP_TOKEN` (at least 32 characters) is consulted only while z
 
 Sessions are server-side. The cookie `__Host-amexlens_session` holds a 256-bit random token; the `sessions` table stores only its SHA-256. Flags: `HttpOnly`, `Secure`, `SameSite=Lax` (so a bank OAuth redirect back to `/plaid/oauth` still has the session), `Path=/`. Absolute lifetime 12 hours, idle timeout 2 hours, rotated on sign-in and on link, disconnect and delete-all. Logout deletes the row, so a copied cookie dies with it; "Sign out everywhere" deletes every row. With `COOKIE_INSECURE_DEV=1` (plain-http LAN testing, refused when `PLAID_ENV=production`) the name is `amexlens_session` without `Secure`. The old literal-`ok` cookie is not token-shaped and is rejected.
 
+The native mobile app (iOS and Android, planned) uses the same `sessions` table with `kind = 'bearer'` (migration 0007): sign-in with `X-AmexLens-Client: mobile` returns the token in the `X-AmexLens-Session-Token` response header instead of a cookie, and the app sends `Authorization: Bearer <token>`. Bearer sessions last 30 days absolute and 7 days idle, are bound to their transport (a cookie token is refused as a bearer and vice versa), skip the browser CSRF checks, and rotate through the same response header. The full rules are in SECURITY.md 3.3 "Bearer sessions".
+
 Sign-in is locked for 15 minutes after 5 failures (`lib/auth/lockout.ts`). The counter is global and in memory because this is one user, per-IP limits can be skipped with a spoofed `X-Forwarded-For`, and the state resets on restart. The first consequence is that five bad codes from anywhere lock the owner out for 15 minutes; put a per-IP throttle at the reverse proxy.
 
 `/login?from=` is accepted only when it is a same-app path (`^/[A-Za-z0-9/_-]*$`, not `//`, `lib/auth/from.ts`).
 
 Every state-changing route also requires `Origin` (or `Referer`) to match `APP_ORIGIN` and the `X-AmexLens-Request: 1` header (`lib/auth/guard.ts`).
 
-Cron cannot complete TOTP or a passkey. `CRON_SECRET` (at least 32 characters) is a bearer token accepted only on `POST /api/plaid/sync`, compared in constant time in the handler (`lib/sync/authorize.ts`). It is not accepted on other routes and not accepted in the query string. A presented bearer is never allowed to fall through to the session path.
+Cron cannot complete TOTP or a passkey. `CRON_SECRET` (at least 32 characters) is a bearer token accepted only on `POST /api/plaid/sync`, compared in constant time in the handler (`lib/sync/authorize.ts`). It is not accepted on other routes and not accepted in the query string. A bearer that is not `CRON_SECRET` is accepted only if it is a live mobile-app bearer session (under `AUTH_MODE=required`); it never falls through to the `AUTH_MODE=none` stand-in.
 
 API routes check the session themselves as the first statement of the handler (`requireSession` / `requireMutation` / `authorizeSync` / `authorizeSetup`). `middleware.ts` is the page gate (redirect to `/login`, built on `APP_ORIGIN`) and a 401-JSON gate for `/api/*`, and a second check, not the only check. The unauthenticated exceptions are `/api/health` (`{ok}` only), `/api/auth/*` (each with its own authenticator), the `/login` and `/plaid/oauth` pages, and static assets. There is no webhook route.
 

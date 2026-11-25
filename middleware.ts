@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { looksLikeSessionToken, sessionCookieName } from "@/lib/auth/cookie";
+import { looksLikeSessionToken, parseAuthorization, sessionCookieName } from "@/lib/auth/cookie";
 import { authMode, cookieInsecureDev } from "@/lib/auth/mode";
 import { buildCsp, HSTS_VALUE, isPlainHttpOrigin } from "@/lib/security-headers.mjs";
 
@@ -34,6 +34,8 @@ function makeNonce(): string {
  *   /plaid/oauth    Plaid OAuth return page; every API call it makes is gated
  *   /_next/*        framework assets
  *   /favicon.ico    static asset
+ *   /api/* with a session-shaped `Authorization: Bearer`
+ *                   the native app's bearer session; the handler's requireSession checks it.
  *   POST /api/plaid/sync with an Authorization header
  *                   the cron path: `authorizeSync` in the handler compares the bearer to
  *                   CRON_SECRET in constant time and answers 401 on any mismatch. Without the
@@ -88,6 +90,9 @@ export function middleware(req: NextRequest) {
 
   const value = req.cookies.get(sessionCookieName(cookieInsecureDev()))?.value;
   if (looksLikeSessionToken(value)) return next();
+  // Native app: a session-shaped `Authorization: Bearer` on /api/* only (never pages). Same
+  // shape-only convenience as the cookie; requireSession checks the row and its kind.
+  if (isApi && parseAuthorization(req.headers.get("authorization")).kind === "session") return next();
 
   if (pathname.startsWith("/api/")) {
     return finish(
